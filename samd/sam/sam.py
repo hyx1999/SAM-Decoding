@@ -7,7 +7,6 @@ class SAM:
     
     @dataclass
     class SamplingState:
-        k: int
         topk_tokens: List[int]
     
     @dataclass
@@ -31,7 +30,9 @@ class SAM:
         sam.state_pruning(n_gram)
         return sam
 
-    def __init__(self):
+    def __init__(self, n_gram: int, k: int):
+        self.n_gram = n_gram
+        self.k = k
         self.states: List[SAM.SAMState] = [SAM.SAMState(next={}, link=-1, length=0, endpos_cnt=0)]
         self.sampling_states: List[SAM.SamplingState] = None
         self.last = 0
@@ -64,8 +65,9 @@ class SAM:
         for tokens in batch_tokens:
             for token in tokens:
                 self.add_token(token)
-            self.add_token(eos_token)
-    
+            if tokens[-1] != eos_token:
+                self.add_token(eos_token)
+
     def count_endpos(self, batch_tokens: List[List[int]], eos_token: int):
         index = 0
         for tokens in batch_tokens:
@@ -87,7 +89,7 @@ class SAM:
                 q.append(v)
     
     def build_sampling_states(self, k: int):
-        self.sampling_states = [SAM.SamplingState(k=k, topk_tokens=[None] * k) for _ in range(len(self.states))]
+        self.sampling_states = [SAM.SamplingState(topk_tokens=[None] * k) for _ in range(len(self.states))]
         for state, samping_state in zip(self.states, self.sampling_states):
             sorted_tokens = sorted([(self.states[s_id].endpos_cnt, token) for token, s_id in state.next.items()], reverse=True)
             topk_tokens = [token for _, token in sorted_tokens[:k]]
