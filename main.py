@@ -6,14 +6,12 @@ from samd import (
     SamdConfig, 
     SamdModel, 
     GenerationConfig, 
-    build_sam, load_sam, dump_sam
+    load_sam
 )
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--sam_load_path', type=str, default=None)
-    parser.add_argument('--sam_dump_path', type=str, default=None)
-    parser.add_argument('--sam_dataset_path', type=str, default=None)
+    parser.add_argument('--sam_path', type=str, required=True)
     parser.add_argument('--dataset_path', type=str, required=True)
     parser.add_argument('--model_path', type=str, required=True)
     parser.add_argument('--samd_n_gram', type=int, default=16)
@@ -28,21 +26,25 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path, torch_dtype=torch.float16, device_map="cuda")
 
+    sam = load_sam(args.sam_path)
+
     samd_config = SamdConfig(n_gram=args.samd_n_gram, k=args.samd_k)
-    
-    if args.sam_load_path is not None:
-        sam = load_sam(args.sam_load_path)
-    elif args.sam_dataset_path is not None:
-        sam_dataset = load_dataset(args.sam_dataset_path)
-        sam = build_sam(samd_config, sam_dataset, tokenizer)
-        if args.sam_dump_path is not None:
-            dump_sam(args.sam_dump_path, sam)
-    else:
-        raise ValueError
-    
     samd_model = SamdModel(samd_config, model, sam, tokenizer.eos_token_id)
     
-    ...
+    assert sam.n_gram == samd_config.n_gram
+    assert sam.k == samd_config.k
+    
+    prompts = ["A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n\nUSER: Give three tips for staying healthy.\n\nASSISTANT:"]
+
+    inputs = tokenizer(
+        prompts, 
+        padding=True, 
+        return_tensors="pt"
+    ).to("cuda")
+    
+    tokens = samd_model.generate(**inputs)
+    response = tokenizer.batch_decode(tokens)
+    print("response:\n{}".format(response))
 
 
 if __name__ == '__main__':
