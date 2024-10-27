@@ -6,10 +6,11 @@ from samd import SamdConfig, build_sam, dump_sam
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_name', type=str, default='/data/models/vicuna-7b-v1.3')
-parser.add_argument('--sam_data_path', type=str, default='sam_data/sam_prompts')
+parser.add_argument('--sam_data_path', type=str, default='sam_data/sam_dialogues')
+parser.add_argument('--cutoff_len', type=int, default=2048)
 parser.add_argument('--n_gram', type=int, default=8)
 parser.add_argument('--k', type=int, default=8)
-parser.add_argument('--sam_path_template', type=str, default="local_cache/sam_{}")
+parser.add_argument('--sam_path_template', type=str, default="local_cache/sam_{}.pkl")
 args = parser.parse_args()
 
 sam_data = load_from_disk(args.sam_data_path)

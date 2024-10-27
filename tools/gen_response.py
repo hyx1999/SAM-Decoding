@@ -29,7 +29,5 @@ for output in outputs:
         "response": generated_text,
     })
 
-print(sam_dialogues)
 sam_dialogues = Dataset.from_list(sam_dialogues)
-
 sam_dialogues.save_to_disk("sam_data/sam_dialogues")
