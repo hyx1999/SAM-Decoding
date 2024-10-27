@@ -1,3 +1,4 @@
+import time
 import pickle
 from datasets import Dataset
 from transformers import PreTrainedTokenizerFast
@@ -24,7 +25,11 @@ def dump_sam(path: str, sam: SAM):
         pickle.dump(sam, f)
 
 def load_sam(path: str):
+    print("load sam...")
+    start = time.perf_counter()
     with open(path, "rb") as f:
         sam: SAM = pickle.load(f)
+    end = time.perf_counter()
     assert type(sam) is SAM
+    print("loading ended in {} seconds.".format(end - start))
     return sam

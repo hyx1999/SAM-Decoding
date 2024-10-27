@@ -1,13 +1,14 @@
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from dataclasses import dataclass
 from copy import deepcopy
 from collections import deque
+from tqdm import tqdm
 
 class SAM:
     
     @dataclass
     class SamplingState:
-        topk_tokens: List[int]
+        topk_tokens: List[Tuple[int, float]]
     
     @dataclass
     class SAMState:
@@ -22,12 +23,13 @@ class SAM:
         eos_token: int,
         n_gram: int,
         k: int,
+        verbose: bool =True
     ):
-        sam = SAM()
-        sam.build_states(batch_tokens, eos_token)
-        sam.count_endpos(batch_tokens, eos_token)
-        sam.build_sampling_states(k)
-        sam.state_pruning(n_gram)
+        sam = SAM(n_gram=n_gram, k=k)
+        sam.build_states(batch_tokens, eos_token, verbose)
+        sam.count_endpos(batch_tokens, eos_token, verbose)
+        sam.build_sampling_states(k, verbose)
+        sam.state_pruning(n_gram, verbose)
         return sam
 
     def __init__(self, n_gram: int, k: int):
@@ -36,7 +38,10 @@ class SAM:
         self.states: List[SAM.SAMState] = [SAM.SAMState(next={}, link=-1, length=0, endpos_cnt=0)]
         self.sampling_states: List[SAM.SamplingState] = None
         self.last = 0
+        
+        # params needed to be reset for each query
         self.state_index = 0
+        self.hot_states: Dict[int, SAM.SamplingState] = {}
 
     def add_token(self, token: int):
         cur = len(self.states)
@@ -61,18 +66,21 @@ class SAM:
                 self.states[q].link = self.states[cur].link = clone
         self.last = cur
     
-    def build_states(self, batch_tokens: List[List[int]], eos_token: int):
-        for tokens in batch_tokens:
+    def build_states(self, batch_tokens: List[List[int]], eos_token: int, verbose: bool):
+        for tokens in tqdm(batch_tokens, desc="build sam states...", disable=not verbose):
             for token in tokens:
                 self.add_token(token)
             if tokens[-1] != eos_token:
                 self.add_token(eos_token)
 
-    def count_endpos(self, batch_tokens: List[List[int]], eos_token: int):
+    def count_endpos(self, batch_tokens: List[List[int]], eos_token: int, verbose: bool):
         index = 0
-        for tokens in batch_tokens:
-            for token in tokens + [eos_token]:
+        for tokens in tqdm(batch_tokens, desc="count endpos...", disable=not verbose):
+            for token in tokens:
                 index = self.states[index].next[token]
+                self.states[index].endpos_cnt += 1
+            if tokens[-1] != eos_token:
+                index = self.states[index].next[eos_token]
                 self.states[index].endpos_cnt += 1
         childs_cnt = [0 for _ in range(len(self.states))]
         for i in range(1, len(self.states)):
@@ -88,23 +96,45 @@ class SAM:
             if childs_cnt[v] == 0:
                 q.append(v)
     
-    def build_sampling_states(self, k: int):
-        self.sampling_states = [SAM.SamplingState(topk_tokens=[None] * k) for _ in range(len(self.states))]
-        for state, samping_state in zip(self.states, self.sampling_states):
-            sorted_tokens = sorted([(self.states[s_id].endpos_cnt, token) for token, s_id in state.next.items()], reverse=True)
-            topk_tokens = [token for _, token in sorted_tokens[:k]]
-            if len(topk_tokens) < k:
+    def build_sampling_states(self, k: int, verbose: bool):
+        self.sampling_states = [SAM.SamplingState(topk_tokens=[(None, None)] * k) for _ in range(len(self.states))]
+        childs = [[] for _ in range(len(self.states))]
+        for state_id, state in enumerate(self.states):
+            if state.link != -1:
+                childs[state.link].append(state_id)
+        
+        index_list: List[int] = []
+        dq = deque([0])
+        while len(dq) != 0:
+            u = dq.popleft()
+            index_list.append(u)
+            for v in childs[u]:
+                dq.append(v)
+        
+        for i in tqdm(index_list, desc="build sampling states...", disable=not verbose, total=len(self.states)):
+            state, samping_state = self.states[i], self.sampling_states[i]
+            topk = sorted(
+                [(token, self.states[next_id].endpos_cnt / state.endpos_cnt) for token, next_id in state.next.items()],
+                key=lambda item: item[1],
+                reverse=True
+            )[:k]
+            samping_state.topk_tokens = topk
+            if len(samping_state.topk_tokens) < k:
+                topk_tokens = [item[0] for item in samping_state.topk_tokens]
+                topk_values = [item[1] for item in samping_state.topk_tokens]
                 f_sampling_state = self.sampling_states[state.link]
-                for token in f_sampling_state.topk_tokens:
+                for token, value in f_sampling_state.topk_tokens:
                     if token not in topk_tokens:
                         topk_tokens.append(token)
+                        topk_values.append(value)
                     if len(topk_tokens) == k:
                         break
-            samping_state.topk_tokens = topk_tokens
+                samping_state.topk_tokens = sorted(list(zip(topk_tokens, topk_values)), key=lambda item: item[1], reverse=True)
 
-    def state_pruning(self, n_gram: int):
+    def state_pruning(self, n_gram: int, verbose: bool):
         mask = [True] * len(self.states)
-        for i, state in enumerate(self.states):
+        for i, state in tqdm(enumerate(self.states), 
+                             desc="state pruning...", disable=not verbose, total=len(self.states)):
             if state.link == -1:
                 continue
             if self.states[state.link].length + 1 > n_gram:
@@ -136,21 +166,52 @@ class SAM:
             state = self.states[cur_index]
         next_index = state.next[token]
         return next_index
-        
+
     def get_tree_tokens(self, start_token: int, tree: List[List[int]]):
         tree_tokens: List[int] = [start_token] + [None] * (len(tree) - 1)
         tree_indices: List[int] = [None] * len(tree)
         cur_index = self.get_next_index(self.state_index, start_token)
         tree_indices[0] = cur_index
         for node_id, childs in enumerate(tree):
+            cur_token = tree[node_id]
             cur_index = tree_indices[node_id]
+            topk_tokens = self.get_merged_topk_tokens(cur_token, cur_index)
             for child_id, child in enumerate(childs):
-                token = self.sampling_states[cur_index].topk_tokens[child_id]
+                token = topk_tokens[child_id]
                 next_index = self.get_next_index(cur_index, token)
                 tree_tokens[child] = token
                 tree_indices[child] = next_index
         return tree_tokens, tree_indices
+    
+    def get_merged_topk_tokens(self, cur_token: int, cur_index: int):
+        if cur_token not in self.hot_states:
+            return self.sampling_states[cur_index].topk_tokens
+        else:
+            tokens = self.hot_states[cur_token].topk_tokens + self.sampling_states[cur_index].topk_tokens
+            tokens = sorted(tokens, key=lambda item: item[1], reverse=True)
+            return tokens[:self.k]
 
-    def update_samping_state(self, state_indices: List[int], path_topk: List[List[int]]):
+    def update_samping_state(self, state_indices: List[int], path_topk: List[List[Tuple[int, float]]]):
         for state_index, topk_tokens in zip(state_indices, path_topk):
             self.sampling_states[state_index].topk_tokens = topk_tokens
+
+    def update_hot_state(self, tokens: List[int], path_topk: List[List[Tuple[int, float]]]):
+        for token, topk_tokens in zip(tokens, path_topk):
+            self.hot_states[token] = SAM.SamplingState(topk_tokens=topk_tokens)
+
+    def init_hot_state(self, tokens: List[int]):
+        token_dict = {}
+        for token_a, token_b in zip(tokens[:-1], tokens[1:]):
+            if token_a not in token_dict:
+                token_dict[token_a] = {}
+            if token_b not in token_dict[token_a]:
+                token_dict[token_a][token_b] = 0
+            token_dict[token_a][token_b] += 1
+        for token, next_dict in token_dict.items():
+            sum_cnt = sum(next_dict.values())
+            topk_tokens = sorted(
+                [(next_token, cnt / sum_cnt) for next_token, cnt in next_dict.items()],
+                key=lambda item: item[1],
+                reverse=True
+            )[:self.k]
+            self.hot_states[token].topk_tokens = topk_tokens
