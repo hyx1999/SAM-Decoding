@@ -3,6 +3,7 @@ import json
 import torch
 import torch.nn as nn
 from dataclasses import dataclass, field
+from collections import namedtuple
 from typing import Optional, Union, List, Literal
 from types import MethodType
 
@@ -15,7 +16,9 @@ from .utils import (
 )
 from .cache import SamdStaticCache
 from .sam import SAM
-from attn_patch import attn_patch_dict
+from .attn_patch import attn_patch_dict
+
+Outputs = namedtuple('Outputs', ['output_ids', 'decode_tokens', 'decode_steps', 'accepet_length'])
 
 class SamdModel:
     
@@ -55,7 +58,6 @@ class SamdModel:
         self.samd_attn_mask = sd_buffers["samd_attn_mask"]
         self.samd_position_ids = sd_buffers["samd_position_ids"]
 
-    @torch.no_grad()
     def init_cache(
         self,
         input_length: int,
@@ -69,9 +71,12 @@ class SamdModel:
             device=self.device
         )
     
+    def init_sam_hot_state(self, output_ids):
+        self.sam.init_hot_state(output_ids)
+    
     def prefill(self, input_ids: torch.Tensor, position_ids: torch.Tensor | None):
         logits = self.lm(input_ids=input_ids, position_ids=position_ids).logits
-        return logits
+        return logits[:, -1:]  # [1, 1, D]
     
     def decode(self, logits: torch.Tensor):
         candidates = gen_candidates(logits, self.sam, self.samd_config, self.gen_config, self.eos_token, self.device)
@@ -105,42 +110,61 @@ class SamdModel:
         new_tokens = new_tokens[:accept_length]
         path = path[:accept_length]
         state_indices = state_indices[:accept_length]
-        path_topk = tree_logits[path].topk(k=self.samd_config.k).indices.cpu().tolist()
 
-        self.sam.update_samping_state(state_indices, path_topk)      
+        topk = tree_logits[path].topk(k=self.samd_config.k)
+        path_topk = list(zip(topk.indices.cpu().tolist(), topk.values.cpu().tolist()))
+
+        self.sam.update_samping_state(state_indices, path_topk)
+        self.sam.update_hot_state(path, path_topk)
         self.cache.select_path(path)
         
-        new_logits = tree_logits[path[-1]]
+        new_logits = tree_logits[0, path[-1]].view(1, 1, -1)
         new_tokens = new_tokens.tolist()
 
         return new_logits, new_tokens
     
+    @torch.inference_mode()
     def generate(self,
         input_ids: torch.Tensor,
-        position_ids: torch.Tensor | None,
-        generation_config: Optional[GenerationConfig] = None, 
-    ):
+        position_ids: torch.Tensor | None = None,
+        generation_config: GenerationConfig | None = None, 
+    ) -> Outputs:
         if generation_config is None:
             generation_config = GenerationConfig()
         self.gen_config = generation_config
 
-        assert input_ids.shape[0] == 1, "Only support batch_size == 1"
+        assert input_ids.shape[0] == 1, "Only support batch_size == 1"  # [1, N]
         
+        self.sam.reset_state()
+        
+        output_ids = input_ids.view(-1).cpu().tolist()        
+
         self.init_cache(
             input_ids.shape[-1],
             generation_config,
         )
         
+        self.init_sam_hot_state(output_ids)
+        
         logits = self.prefill(input_ids, position_ids)
         
-        gen_tokens = []
+        input_length = input_ids.shape[-1]
+        decode_tokens = 0
+        decode_steps = 0
+        accepet_length = []
         for step in range(generation_config.max_new_tokens):
-            logits, new_tokens = self.decode(logits)
+            logits, new_ids = self.decode(logits)
             eos_index = None
-            if self.eos_token in new_tokens:
-                eos_index = new_tokens.index(self.eos_token)
-                new_tokens = new_tokens[:eos_index]
-            gen_tokens.extend(new_tokens)
+            if self.eos_token in new_ids:
+                eos_index = new_ids.index(self.eos_token)
+                new_ids = new_ids[:eos_index]
+            output_ids.extend(new_ids)
+            decode_steps += 1
+            decode_tokens += len(new_ids)
+            accepet_length.append(len(new_ids))
             if eos_index is not None:
                 break
-        return gen_tokens
+            if decode_tokens >= generation_config.max_new_tokens:
+                break
+        output_ids = output_ids[:input_length + generation_config.max_new_tokens]
+        return Outputs(output_ids, decode_tokens, decode_steps, accepet_length)
