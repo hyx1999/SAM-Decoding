@@ -7,7 +7,7 @@ import argparse
 from fastchat.utils import str_to_torch_dtype
 from evaluation.eval import run_eval, reorg_answer_file
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
-from samd import SamdConfig, SamdModel, GenerationConfig, load_sam
+from samd import SamdConfig, SamdModel, SamdGenerationConfig, load_sam
 
 def baseline_forward(
     inputs, 
@@ -17,18 +17,20 @@ def baseline_forward(
     temperature: float = 0.0, 
     do_sample: bool = False
 ):
+    max_cache_len = model.lm.config.max_position_embeddings
     input_ids = inputs.input_ids
     outputs = model.generate(
         input_ids,
-        generation_config=GenerationConfig(
+        generation_config=SamdGenerationConfig(
             max_new_tokens=max_new_tokens, 
+            max_cache_len=max_cache_len,
             temperature=temperature
         ),
     )
-    output_ids = [outputs.output_ids]
+    output_ids = outputs.output_ids
     new_token = outputs.decode_tokens
     step = outputs.decode_steps
-    accept_length_list = outputs.accepet_length
+    accept_length_list = outputs.accepet_length_per_step
     return output_ids, new_token, step, accept_length_list
 
 
@@ -94,8 +96,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--sam_path",
         type=str,
-        default="local_cache/sam.pkl"
+        default="local_cache/sam_mini.pkl"
     )
+    parser.add_argument('--samd_n_gram', type=int, default=8)
+    parser.add_argument('--samd_k', type=int, default=8)
     args = parser.parse_args()
 
     question_file = f"evaluation/data/{args.bench_name}/question.jsonl"
@@ -111,7 +115,7 @@ if __name__ == "__main__":
         args.model_path,
         torch_dtype=str_to_torch_dtype(args.dtype),
         low_cpu_mem_usage=True,
-        device_map="auto"
+        device_map="cuda"
     )
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
@@ -119,7 +123,12 @@ if __name__ == "__main__":
     sam = load_sam(args.sam_path)
 
     samd_config = SamdConfig(n_gram=args.samd_n_gram, k=args.samd_k)
-    samd_model = SamdModel(samd_config, model, sam, tokenizer.eos_token_id)
+    samd_model = SamdModel(
+        samd_config, model, sam, 
+        tokenizer.eos_token_id,
+        "cuda", 
+        str_to_torch_dtype(args.dtype),
+    )
     
     assert sam.n_gram == samd_config.n_gram
     assert sam.k == samd_config.k

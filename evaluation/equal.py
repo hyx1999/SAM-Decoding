@@ -23,14 +23,19 @@ def get_content(jsonfile_path="../data/mt_bench/model_answer/vicuna-7b-v1.3-pld-
 
 
 def txt_compare(file_path1, file_path2):
+    cnt_neq = 0
+    cnt = 0
     with open(file_path1, 'r', encoding='utf-8') as f1:
         lines1 = f1.readlines()
     with open(file_path2, 'r', encoding='utf-8') as f2:
         lines2 = f2.readlines()
     for l1, l2 in zip(lines1, lines2):
         if l1 != l2:
-            return False
-    return True
+            cnt_neq += 1
+            print(l1, "\n", l2)
+        cnt += 1
+    print(f"neq: {cnt_neq}, all: {cnt}, ratio: {cnt_neq / cnt}")
+    return cnt_neq == 0
 
 
 def run_compare(file_path, jsonfile1, jsonfile2):
@@ -53,7 +58,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--file-path",
-        default='../data/spec_bench/model_answer/',
+        default='evaluation/data/spec_bench/model_answer/',
         type=str,
         help="The file path of model answers.",
     )
