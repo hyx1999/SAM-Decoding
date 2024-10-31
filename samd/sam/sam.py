@@ -1,3 +1,4 @@
+import torch
 from typing import List, Tuple, Dict
 from dataclasses import dataclass
 from copy import deepcopy
@@ -161,10 +162,10 @@ class SAM:
     
     def get_next_index(self, cur_index: int, token: int):
         state = self.states[cur_index]
-        while token not in state.next:
+        while token not in state.next and cur_index != 0:
             cur_index = state.link
             state = self.states[cur_index]
-        next_index = state.next[token]
+        next_index = state.next.get(token, 0)
         return next_index
 
     def get_tree_tokens(self, start_token: int, tree: List[List[int]]):
@@ -173,23 +174,26 @@ class SAM:
         cur_index = self.get_next_index(self.state_index, start_token)
         tree_indices[0] = cur_index
         for node_id, childs in enumerate(tree):
-            cur_token = tree[node_id]
+            cur_token = tree_tokens[node_id]
             cur_index = tree_indices[node_id]
             topk_tokens = self.get_merged_topk_tokens(cur_token, cur_index)
             for child_id, child in enumerate(childs):
-                token = topk_tokens[child_id]
+                token = topk_tokens[child_id][0]
                 next_index = self.get_next_index(cur_index, token)
                 tree_tokens[child] = token
                 tree_indices[child] = next_index
         return tree_tokens, tree_indices
     
-    def get_merged_topk_tokens(self, cur_token: int, cur_index: int):
+    def get_merged_topk_tokens(self, cur_token: int, cur_index: int):    
         if cur_token not in self.hot_states:
             return self.sampling_states[cur_index].topk_tokens
         else:
             tokens = self.hot_states[cur_token].topk_tokens + self.sampling_states[cur_index].topk_tokens
             tokens = sorted(tokens, key=lambda item: item[1], reverse=True)
             return tokens[:self.k]
+    
+    def set_state_index(self, index: int):
+        self.state_index = index
 
     def update_samping_state(self, state_indices: List[int], path_topk: List[List[Tuple[int, float]]]):
         for state_index, topk_tokens in zip(state_indices, path_topk):
@@ -199,19 +203,15 @@ class SAM:
         for token, topk_tokens in zip(tokens, path_topk):
             self.hot_states[token] = SAM.SamplingState(topk_tokens=topk_tokens)
 
-    def init_hot_state(self, tokens: List[int]):
-        token_dict = {}
-        for token_a, token_b in zip(tokens[:-1], tokens[1:]):
-            if token_a not in token_dict:
-                token_dict[token_a] = {}
-            if token_b not in token_dict[token_a]:
-                token_dict[token_a][token_b] = 0
-            token_dict[token_a][token_b] += 1
-        for token, next_dict in token_dict.items():
-            sum_cnt = sum(next_dict.values())
-            topk_tokens = sorted(
-                [(next_token, cnt / sum_cnt) for next_token, cnt in next_dict.items()],
-                key=lambda item: item[1],
-                reverse=True
-            )[:self.k]
-            self.hot_states[token].topk_tokens = topk_tokens
+    def init_hot_state(self, topk: List[List[Tuple[int, float]]], tokens: List[int]):
+        assert len(topk) == len(tokens)
+        for topk_tokens, token in zip(topk, tokens):
+            self.hot_states[token] = SAM.SamplingState(topk_tokens=topk_tokens)
+
+    def print_state(self):
+        print("state_index:", self.state_index)
+        print("length: {}, endpos_cnt: {}".format(
+            self.states[self.state_index].length, 
+            self.states[self.state_index].endpos_cnt,
+        ))
+        

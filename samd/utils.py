@@ -13,11 +13,12 @@ class SamplingMethods(str, Enum):
     typical = "typical"
     nucleus = "nucleus"
 
-Candidates = namedtuple('tree_candidates', ['tree_tokens', 'candidate_tokens', 'candiate_paths', 'candiate_indices'])
+Candidates = namedtuple('tree_candidates', ['tree_tokens', 'candidate_tokens', 'candidate_indices', 'candidate_sam_indices'])
 
 @dataclass
-class GenerationConfig:
+class SamdGenerationConfig:
     max_new_tokens: int = field(default=512)
+    max_cache_len: int = field(default=1024)
     temperature: float = field(default=0.)
     posterior_threshold: float = field(default=0.3)
     posterior_alpha: float = field(default=0.09)
@@ -90,9 +91,9 @@ def gen_sd_buffers(
         samd_attn_mask[node_id, ancs] = True
     samd_attn_mask = samd_attn_mask.view(1, 1, num_nodes, num_nodes)
     
-    samd_position_ids = torch.zeros(num_nodes, dtype=torch.long)
+    samd_position_ids = torch.zeros((1, num_nodes), dtype=torch.long)
     for i in range(num_nodes):
-        samd_position_ids[i] = level_dict[i]
+        samd_position_ids[:, i] = level_dict[i]
 
     sd_buffers = {
         "samd_attn_mask": samd_attn_mask,
@@ -103,7 +104,7 @@ def gen_sd_buffers(
     return sd_buffers
 
 
-def get_nucleus_one_token(logits, config: GenerationConfig):
+def get_nucleus_one_token(logits, config: SamdGenerationConfig):
     """
     Performs token sampling based on the nucleus (top-p) sampling method.
 
@@ -135,7 +136,7 @@ def get_nucleus_one_token(logits, config: GenerationConfig):
     return sampled_token
 
 
-def get_typical_one_token(logits, config: GenerationConfig):
+def get_typical_one_token(logits, config: SamdGenerationConfig):
     """
     Implements token sampling based on the typical sampling method.
 
@@ -171,7 +172,7 @@ def gen_candidates(
     logits,
     sam: SAM,
     sd_config: SamdConfig,
-    gen_config: GenerationConfig,
+    gen_config: SamdGenerationConfig,
     eos_token: int,
     device: torch.device,
 ):
@@ -195,26 +196,33 @@ def gen_candidates(
         else:
             raise NotImplementedError
     tree_tokens, tree_indices = sam.get_tree_tokens(start_token, sd_config.tree)
-    candiate_tokens = [[tree_tokens[0]]] + [None] * (len(sd_config.tree) - 1)
-    candidate_paths = [[0]] + [None] * (len(sd_config.tree) - 1)
-    candiate_indices = [[tree_indices[0]]] + [None] * (len(sd_config.tree) - 1)
+    candidate_tokens = [[tree_tokens[0]]] + [None] * (len(sd_config.tree) - 1)
+    candidate_indices = [[0]] + [None] * (len(sd_config.tree) - 1)
+    candidate_sam_indices = [[tree_indices[0]]] + [None] * (len(sd_config.tree) - 1)
+    # candidate_indices => sam_indices
     for node_id, childs in enumerate(sd_config.tree):
         for child_id in childs:
-            candiate_tokens[child_id] = candiate_tokens[node_id] + [tree_tokens[child_id]]
-            candidate_paths[child_id] = candidate_paths[node_id] + [child_id]
-            candiate_indices[child_id] = candiate_indices[child_id] + [tree_indices[child_id]]
+            candidate_tokens[child_id] = candidate_tokens[node_id] + [tree_tokens[child_id]]
+            candidate_indices[child_id] = candidate_indices[node_id] + [child_id]
+            candidate_sam_indices[child_id] = candidate_sam_indices[node_id] + [tree_indices[child_id]]
     
-    max_level = max(len(p) for p in candiate_tokens)
-    candiate_tokens = [pad_path(p, max_level, eos_token) for p in candiate_tokens]
-    candidate_paths = [pad_path(p, max_level, -1) for p in candidate_paths]
-    candiate_indices = [pad_path(p, max_level, -1) for p in candiate_indices]
+    max_level = max(len(p) for p in candidate_tokens)
+    candidate_tokens = [pad_path(p, max_level, -1) for p in candidate_tokens]
+    candidate_indices = [pad_path(p, max_level, -1) for p in candidate_indices]
+    candidate_sam_indices = [pad_path(p, max_level, -1) for p in candidate_sam_indices]
     
-    tree_tokens = torch.tensor(tree_tokens, dtype=torch.long, device=device)
-    candiate_tokens = torch.tensor(candiate_tokens, dtype=torch.long, device=device)
-    return Candidates(tree_tokens, candiate_tokens, candidate_paths, candiate_indices)
+    tree_tokens = torch.tensor(tree_tokens, dtype=torch.long, device=device).unsqueeze(0)
+    candidate_tokens = torch.tensor(candidate_tokens, dtype=torch.long, device=device)
+    candidate_indices = torch.tensor(candidate_indices, dtype=torch.long, device=device)
+    return Candidates(
+        tree_tokens, 
+        candidate_tokens, 
+        candidate_indices, 
+        candidate_sam_indices
+    )
 
 
-def get_nucleus_posterior_mask(logits: torch.Tensor, candidates: torch.Tensor, config: GenerationConfig):
+def get_nucleus_posterior_mask(logits: torch.Tensor, candidates: torch.Tensor, config: SamdGenerationConfig):
     """
     Generates a posterior mask for token candidates using nucleus (top-p) sampling.
 
@@ -269,7 +277,7 @@ def get_nucleus_posterior_mask(logits: torch.Tensor, candidates: torch.Tensor, c
     return posterior_mask
 
 
-def get_typical_posterior_mask(logits: torch.Tensor, candidates: torch.Tensor, config: GenerationConfig):
+def get_typical_posterior_mask(logits: torch.Tensor, candidates: torch.Tensor, config: SamdGenerationConfig):
     """
     Args:
         logits (torch.Tensor): A tensor of logits from a language model output.
@@ -303,7 +311,7 @@ def get_typical_posterior_mask(logits: torch.Tensor, candidates: torch.Tensor, c
 def eval_posterior(
     logits: torch.Tensor,
     candidates: torch.Tensor,
-    config: GenerationConfig,
+    config: SamdGenerationConfig,
 ):
     """
     Evaluate the posterior probabilities of the candidates based on the provided logits and choose the best candidate.
@@ -333,9 +341,8 @@ def eval_posterior(
             best_candidate = torch.tensor(0, dtype=torch.long, device=candidates.device)
         else:
             best_candidate = torch.argmax(candidates_accept_length).to(torch.long)
-        return best_candidate, accept_length + 1
-        
-    if config.sampling == SamplingMethods.typical:
+        return best_candidate, accept_length + 1    
+    elif config.sampling == SamplingMethods.typical:
         if config.fast:
             posterior_prob = torch.softmax(logits[:, :-1] / config.temperature, dim=-1)
             candidates_prob = torch.gather(

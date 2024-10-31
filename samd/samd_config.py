@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Optional, Union, List, Literal
+from enum import Enum
 
 @dataclass
 class SamdConfig:
@@ -10,6 +11,17 @@ class SamdConfig:
     def __post_init__(self):
         if self.tree is None:
             self.tree = load_default_tree()
+
+
+class ForwardType(str, Enum):
+    prefill = "prefill"
+    decode = "decode"
+
+class ForwardState:
+        
+    def __init__(self, forward_type: ForwardType | None) -> None:
+        self.forward_type = forward_type
+
 
 def load_default_tree():
     import os

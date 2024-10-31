@@ -3,9 +3,17 @@ from transformers.models.llama.modeling_llama import (
     LlamaModel,
     Cache,
     StaticCache,
-    AttentionMaskConverter,
-    _prepare_4d_causal_attention_mask_with_cache_position
+    AttentionMaskConverter
 )
+from ..samd_config import ForwardType
+
+try:
+    from transformers.models.llama.modeling_llama import (
+        _prepare_4d_causal_attention_mask_with_cache_position
+    )
+except:
+    _prepare_4d_causal_attention_mask_with_cache_position = LlamaModel._prepare_4d_causal_attention_mask_with_cache_position
+
 
 def _update_causal_mask(
     self,
@@ -65,11 +73,11 @@ def _update_causal_mask(
         batch_size=input_tensor.shape[0],
     )
     
-    if hasattr(self, "samd_attn_mask"):
+    # assert hasattr(self, "samd_attn_mask") and hasattr(self, "forward_state")
+    if self.forward_state.forward_type == ForwardType.decode:
         samd_attn_mask: torch.Tensor = self.samd_attn_mask
-        sd_len = samd_attn_mask.shape[-1]
-        causal_mask[:, :, -sd_len:, -sd_len:][samd_attn_mask == 0] = causal_mask.min()
-
+        causal_mask[:, :, :, cache_position] = causal_mask.min() * (samd_attn_mask == 0)
+           
     if (
         self.config._attn_implementation == "sdpa"
         and attention_mask is not None
