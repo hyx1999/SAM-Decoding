@@ -106,7 +106,7 @@ class SamdModel(nn.Module):
         ).logits
         self.cache.set_cache_positions(input_ids.shape[-1])
         self.sam.transfer_state(input_ids_list)
-        self.sam.init_hot_state(self.logits_to_topk(logits.squeeze(0)), input_ids_list)
+        self.sam.update_hot_state(input_ids_list, self.logits_to_topk(logits.squeeze(0)))
         return logits[:, -1:]  # [1, 1, D]
     
     def decode(self, logits: torch.Tensor, length: int):
@@ -119,13 +119,6 @@ class SamdModel(nn.Module):
             past_key_values=self.cache,
         ).logits
         candidate_logits = tree_logits.squeeze(0)[candidates.candidate_indices]
-        
-        # [1, 2, 3, 4, 5, 6]
-        
-        # [1, -1, -1, -1]
-        # [1,  2, -1. -1]
-        # [1,  3, -1, -1]
-        # ...
 
         best_candidate, accept_length = eval_posterior(candidate_logits, candidates.candidate_tokens, self.gen_config)
         new_logits, new_tokens = self.update_state(

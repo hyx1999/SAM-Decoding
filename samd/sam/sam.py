@@ -29,7 +29,7 @@ class SAM:
         sam = SAM(n_gram=n_gram, k=k)
         sam.build_states(batch_tokens, eos_token, verbose)
         sam.count_endpos(batch_tokens, eos_token, verbose)
-        sam.build_sampling_states(k, verbose)
+        sam.build_sampling_states(k, eos_token, verbose)
         sam.state_pruning(n_gram, verbose)
         return sam
 
@@ -97,7 +97,7 @@ class SAM:
             if childs_cnt[v] == 0:
                 q.append(v)
     
-    def build_sampling_states(self, k: int, verbose: bool):
+    def build_sampling_states(self, k: int, eos_token: int, verbose: bool):
         self.sampling_states = [SAM.SamplingState(topk_tokens=[(None, None)] * k) for _ in range(len(self.states))]
         childs = [[] for _ in range(len(self.states))]
         for state_id, state in enumerate(self.states):
@@ -119,18 +119,9 @@ class SAM:
                 key=lambda item: item[1],
                 reverse=True
             )[:k]
+            if len(topk) == 0:
+                topk.append((eos_token, 0.0))
             samping_state.topk_tokens = topk
-            if len(samping_state.topk_tokens) < k:
-                topk_tokens = [item[0] for item in samping_state.topk_tokens]
-                topk_values = [item[1] for item in samping_state.topk_tokens]
-                f_sampling_state = self.sampling_states[state.link]
-                for token, value in f_sampling_state.topk_tokens:
-                    if token not in topk_tokens:
-                        topk_tokens.append(token)
-                        topk_values.append(value)
-                    if len(topk_tokens) == k:
-                        break
-                samping_state.topk_tokens = sorted(list(zip(topk_tokens, topk_values)), key=lambda item: item[1], reverse=True)
 
     def state_pruning(self, n_gram: int, verbose: bool):
         mask = [True] * len(self.states)
@@ -186,14 +177,23 @@ class SAM:
     
     def get_merged_topk_tokens(self, cur_token: int, cur_index: int):    
         if cur_token not in self.hot_states:
-            return self.sampling_states[cur_index].topk_tokens
+            topk_tokens = self.sampling_states[cur_index].topk_tokens
         else:
             tokens = self.hot_states[cur_token].topk_tokens + self.sampling_states[cur_index].topk_tokens
             tokens = sorted(tokens, key=lambda item: item[1], reverse=True)
-            return tokens[:self.k]
+            topk_tokens = tokens[:self.k]
+        if len(topk_tokens) < self.k:
+            n = self.k - len(topk_tokens)
+            topk_tokens = topk_tokens + [topk_tokens[-1]] * n
+        return topk_tokens
     
     def set_state_index(self, index: int):
         self.state_index = index
+    
+    def set_k(self, k: int):
+        self.k = k
+        for state in self.sampling_states:
+            state.topk_tokens = state.topk_tokens[:k]
 
     def update_samping_state(self, state_indices: List[int], path_topk: List[List[Tuple[int, float]]]):
         for state_index, topk_tokens in zip(state_indices, path_topk):
@@ -203,15 +203,9 @@ class SAM:
         for token, topk_tokens in zip(tokens, path_topk):
             self.hot_states[token] = SAM.SamplingState(topk_tokens=topk_tokens)
 
-    def init_hot_state(self, topk: List[List[Tuple[int, float]]], tokens: List[int]):
-        assert len(topk) == len(tokens)
-        for topk_tokens, token in zip(topk, tokens):
-            self.hot_states[token] = SAM.SamplingState(topk_tokens=topk_tokens)
-
     def print_state(self):
         print("state_index:", self.state_index)
         print("length: {}, endpos_cnt: {}".format(
             self.states[self.state_index].length, 
             self.states[self.state_index].endpos_cnt,
         ))
-        
