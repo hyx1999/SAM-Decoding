@@ -71,7 +71,7 @@ class SamdModel(nn.Module):
         self.samd_attn_mask = sd_buffers["samd_attn_mask"]
         self.samd_position_ids = sd_buffers["samd_position_ids"]
 
-    def init_cache(
+    def reset_cache(
         self,
         gen_config: SamdGenerationConfig, 
     ):
@@ -106,7 +106,7 @@ class SamdModel(nn.Module):
         ).logits
         self.cache.set_cache_positions(input_ids.shape[-1])
         self.sam.transfer_state(input_ids_list)
-        self.sam.update_hot_state(input_ids_list, self.logits_to_topk(logits.squeeze(0)))
+        self.sam.update_sam_online(input_ids_list)
         return logits[:, -1:]  # [1, 1, D]
     
     def decode(self, logits: torch.Tensor, length: int):
@@ -151,11 +151,8 @@ class SamdModel(nn.Module):
         indices = indices[:accept_length]
         state_indices = state_indices[:accept_length]
         
-        topk = self.logits_to_topk(logits)
-
-        # self.sam.update_samping_state(state_indices, topk)
-        self.sam.update_hot_state(tokens, topk)
         self.sam.set_state_index(state_indices[-1])
+        self.sam.update_sam_online(tokens)
         self.cache.post_update(indices)
         
         logits = logits[-1].view(1, 1, -1)
@@ -175,11 +172,9 @@ class SamdModel(nn.Module):
         assert input_ids.shape[0] == 1, "Only support batch_size == 1"  # [1, N]
         
         self.sam.reset_state()
+        self.reset_cache(generation_config)
         
         input_ids_list = input_ids.squeeze(0).cpu().tolist()
-
-        self.init_cache(generation_config)
-        
         logits = self.prefill(input_ids, attention_mask, input_ids_list)
                 
         self.forward_state.forward_type = ForwardType.decode

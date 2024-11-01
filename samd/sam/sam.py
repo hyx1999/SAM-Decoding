@@ -5,6 +5,8 @@ from copy import deepcopy
 from collections import deque
 from tqdm import tqdm
 
+from .sam_online import SAMOnline
+
 class SAM:
     
     @dataclass
@@ -40,9 +42,9 @@ class SAM:
         self.sampling_states: List[SAM.SamplingState] = None
         self.last = 0
         
-        # params needed to be reset for each query
-        self.state_index = 0
-        self.hot_states: Dict[int, SAM.SamplingState] = {}
+        self.cur_index = 0
+        self.cur_length = 0
+        self.sam_online: SAMOnline = None
 
     def add_token(self, token: int):
         cur = len(self.states)
@@ -145,50 +147,80 @@ class SAM:
         self.sampling_states = new_sampling_states
 
     def reset_state(self):
-        self.state_index = 0
+        self.cur_index = 0
+        self.cur_length = 0
+        self.sam_online = SAMOnline(self.n_gram, self.k)
     
     def transfer_state(self, tokens: List[int]):
         for token in tokens:
-            self.state_index = self.get_next_index(self.state_index, token)
+            self.cur_index, self.cur_length \
+                = self.get_next_index(self.cur_index, self.cur_length, token)
     
-    def get_next_index(self, cur_index: int, token: int):
-        state = self.states[cur_index]
-        while token not in state.next and cur_index != 0:
-            cur_index = state.link
-            state = self.states[cur_index]
-        next_index = state.next.get(token, 0)
-        return next_index
+    def get_next_index(self, index: int, length: int, token: int):
+        state = self.states[index]
+        while token not in state.next and index != 0:
+            index = state.link
+            length = self.states[index].length
+            state = self.states[index]
+        if token in state.next:
+            index = state.next.get(token)
+            length += 1
+        else:
+            index = length = 0
+        return index, length
 
     def get_tree_tokens(self, start_token: int, tree: List[List[int]]):
         tree_tokens: List[int] = [start_token] + [None] * (len(tree) - 1)
         tree_indices: List[int] = [None] * len(tree)
-        cur_index = self.get_next_index(self.state_index, start_token)
-        tree_indices[0] = cur_index
+        local_index, local_length = self.sam_online.get_next_index(
+            self.sam_online.cur_index, self.sam_online.cur_length, start_token
+        )
+        global_index, global_length = self.get_next_index(
+            self.cur_index, self.cur_length, start_token
+        )
+        tree_indices[0] = (
+            local_index, local_length, 
+            global_index, global_length,
+        )
         for node_id, childs in enumerate(tree):
-            cur_token = tree_tokens[node_id]
-            cur_index = tree_indices[node_id]
-            topk_tokens = self.get_merged_topk_tokens(cur_token, cur_index)
+            local_index, local_length, global_index, global_length = tree_indices[node_id]
+            topk_tokens = self.get_merged_topk_tokens(
+                local_index, global_index, local_length >= global_length
+            )
             for child_id, child in enumerate(childs):
-                token = topk_tokens[child_id][0]
-                next_index = self.get_next_index(cur_index, token)
+                token = topk_tokens[child_id]
+                next_local_index, next_local_length = self.sam_online.get_next_index(
+                    local_index, local_length, token, cutoff=False
+                )
+                next_global_index, next_global_length = self.get_next_index(
+                    global_index, global_length, token
+                )
                 tree_tokens[child] = token
-                tree_indices[child] = next_index
+                tree_indices[child] = (
+                    next_local_index, next_local_length,
+                    next_global_index, next_global_length,
+                )
+        tree_indices = [item[2] for item in tree_indices]
         return tree_tokens, tree_indices
     
-    def get_merged_topk_tokens(self, cur_token: int, cur_index: int):    
-        if cur_token not in self.hot_states:
-            topk_tokens = self.sampling_states[cur_index].topk_tokens
+    def get_merged_topk_tokens(self, 
+        local_index: int,
+        global_index: int,
+        flag: int,
+    ):
+        if flag:
+            topk_tokens = self.sam_online.sampling_states[local_index].topk_tokens + \
+                [item[0] for item in self.sampling_states[global_index].topk_tokens]
         else:
-            tokens = self.hot_states[cur_token].topk_tokens + self.sampling_states[cur_index].topk_tokens
-            tokens = sorted(tokens, key=lambda item: item[1], reverse=True)
-            topk_tokens = tokens[:self.k]
+            topk_tokens = [item[0] for item in self.sampling_states[global_index].topk_tokens] + \
+                self.sam_online.sampling_states[local_index].topk_tokens
         if len(topk_tokens) < self.k:
             n = self.k - len(topk_tokens)
             topk_tokens = topk_tokens + [topk_tokens[-1]] * n
         return topk_tokens
     
     def set_state_index(self, index: int):
-        self.state_index = index
+        self.cur_index = index
     
     def set_k(self, k: int):
         self.k = k
@@ -199,13 +231,12 @@ class SAM:
         for state_index, topk_tokens in zip(state_indices, path_topk):
             self.sampling_states[state_index].topk_tokens = topk_tokens
 
-    def update_hot_state(self, tokens: List[int], path_topk: List[List[Tuple[int, float]]]):
-        for token, topk_tokens in zip(tokens, path_topk):
-            self.hot_states[token] = SAM.SamplingState(topk_tokens=topk_tokens)
+    def update_sam_online(self, tokens: List[int]):
+        self.sam_online.add_tokens(tokens)
 
     def print_state(self):
-        print("state_index:", self.state_index)
+        print("state_index:", self.cur_index)
         print("length: {}, endpos_cnt: {}".format(
-            self.states[self.state_index].length, 
-            self.states[self.state_index].endpos_cnt,
+            self.states[self.cur_index].length, 
+            self.states[self.cur_index].endpos_cnt,
         ))
