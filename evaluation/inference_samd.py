@@ -9,12 +9,12 @@ from evaluation.eval import run_eval, reorg_answer_file
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
 from samd import SamdConfig, SamdModel, SamdGenerationConfig, load_sam
 
-def baseline_forward(
+def samd_forward(
     inputs, 
     model: SamdModel, 
     tokenizer: PreTrainedTokenizer, 
     max_new_tokens: int, 
-    temperature: float = 0.0, 
+    temperature: float = 0.0,
     do_sample: bool = False
 ):
     max_cache_len = model.lm.config.max_position_embeddings
@@ -22,7 +22,7 @@ def baseline_forward(
     outputs = model.generate(
         input_ids,
         generation_config=SamdGenerationConfig(
-            max_new_tokens=max_new_tokens, 
+            max_new_tokens=max_new_tokens,
             max_cache_len=max_cache_len,
             temperature=temperature
         ),
@@ -131,7 +131,10 @@ if __name__ == "__main__":
     )
     
     assert sam.n_gram == samd_config.n_gram
-    assert sam.k == samd_config.k
+    assert sam.k >= samd_config.k
+    
+    if samd_config.k < sam.k:
+        sam.set_k(samd_config.k)
 
     if args.temperature > 0:
         do_sample = True
@@ -141,7 +144,7 @@ if __name__ == "__main__":
     run_eval(
         model=samd_model,
         tokenizer=tokenizer,
-        forward_func=baseline_forward,
+        forward_func=samd_forward,
         model_id=args.model_id,
         question_file=question_file,
         question_begin=args.question_begin,

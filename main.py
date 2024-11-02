@@ -91,7 +91,9 @@ def main():
         # attn_implementation="eager",
     )
     
-    prompts = ["A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n\nUSER: Give three tips for staying healthy.\n\nASSISTANT: "]
+    # prompts = ["A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n\nUSER: Give three tips for staying healthy.\n\nASSISTANT: "]
+    
+    prompts = ['A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user\'s questions.\n\nUSER: Please generate the following: "1, 2, 3, 4, 5, 6, 7, 8, 9, 10".\n\nASSISTANT: ']
 
     inputs = tokenizer(
         prompts, 
