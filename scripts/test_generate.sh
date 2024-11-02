@@ -4,7 +4,7 @@ set -x
 
 cd $(dirname $0)/..
 
-devices=2
+devices=1
 
 CUDA_VISIBLE_DEVICES=${devices} python main.py \
     --sam_path local_cache/sam_mini.pkl \
