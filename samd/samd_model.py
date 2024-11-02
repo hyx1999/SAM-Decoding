@@ -105,7 +105,7 @@ class SamdModel(nn.Module):
             past_key_values=self.cache,
         ).logits
         self.cache.set_cache_positions(input_ids.shape[-1])
-        self.sam.transfer_state(input_ids_list)
+        self.sam.transfer_cur_state(input_ids_list)
         self.sam.update_sam_online(input_ids_list)
         return logits[:, -1:]  # [1, 1, D]
     

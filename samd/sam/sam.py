@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 from .sam_online import SAMOnline
 
+
 class SAM:
     
     @dataclass
@@ -43,7 +44,6 @@ class SAM:
         self.last = 0
         
         self.cur_index = 0
-        self.cur_length = 0
         self.sam_online: SAMOnline = None
 
     def add_token(self, token: int):
@@ -146,90 +146,70 @@ class SAM:
         self.states = new_states
         self.sampling_states = new_sampling_states
 
-    def reset_state(self):
-        self.cur_index = 0
-        self.cur_length = 0
-        self.sam_online = SAMOnline(self.n_gram, self.k)
-    
-    def transfer_state(self, tokens: List[int]):
-        for token in tokens:
-            self.cur_index, self.cur_length \
-                = self.get_next_index(self.cur_index, self.cur_length, token)
-    
-    def get_next_index(self, index: int, length: int, token: int):
-        state = self.states[index]
-        while token not in state.next and index != 0:
-            index = state.link
-            length = self.states[index].length
-            state = self.states[index]
-        if token in state.next:
-            index = state.next.get(token)
-            length += 1
-        else:
-            index = length = 0
-        return index, length
-
-    def get_tree_tokens(self, start_token: int, tree: List[List[int]]):
-        tree_tokens: List[int] = [start_token] + [None] * (len(tree) - 1)
-        tree_indices: List[int] = [None] * len(tree)
-        local_index, local_length = self.sam_online.get_next_index(
-            self.sam_online.cur_index, self.sam_online.cur_length, start_token
-        )
-        global_index, global_length = self.get_next_index(
-            self.cur_index, self.cur_length, start_token
-        )
-        tree_indices[0] = (
-            local_index, local_length, 
-            global_index, global_length,
-        )
-        for node_id, childs in enumerate(tree):
-            local_index, local_length, global_index, global_length = tree_indices[node_id]
-            topk_tokens = self.get_merged_topk_tokens(
-                local_index, global_index, local_length >= global_length
-            )
-            for child_id, child in enumerate(childs):
-                token = topk_tokens[child_id]
-                next_local_index, next_local_length = self.sam_online.get_next_index(
-                    local_index, local_length, token, cutoff=False
-                )
-                next_global_index, next_global_length = self.get_next_index(
-                    global_index, global_length, token
-                )
-                tree_tokens[child] = token
-                tree_indices[child] = (
-                    next_local_index, next_local_length,
-                    next_global_index, next_global_length,
-                )
-        tree_indices = [item[2] for item in tree_indices]
-        return tree_tokens, tree_indices
-    
-    def get_merged_topk_tokens(self, 
-        local_index: int,
-        global_index: int,
-        flag: int,
-    ):
-        if flag:
-            topk_tokens = self.sam_online.sampling_states[local_index].topk_tokens + \
-                [item[0] for item in self.sampling_states[global_index].topk_tokens]
-        else:
-            topk_tokens = [item[0] for item in self.sampling_states[global_index].topk_tokens] + \
-                self.sam_online.sampling_states[local_index].topk_tokens
-        if len(topk_tokens) < self.k:
-            n = self.k - len(topk_tokens)
-            topk_tokens = topk_tokens + [topk_tokens[-1]] * n
-        return topk_tokens
-    
-    def set_state_index(self, index: int):
-        self.cur_index = index
-    
     def set_k(self, k: int):
         self.k = k
         for state in self.sampling_states:
             state.topk_tokens = state.topk_tokens[:k]
 
-    def update_samping_state(self, state_indices: List[int], path_topk: List[List[Tuple[int, float]]]):
-        for state_index, topk_tokens in zip(state_indices, path_topk):
-            self.sampling_states[state_index].topk_tokens = topk_tokens
+    def reset_state(self):
+        self.cur_index = 0
+        self.sam_online = SAMOnline()
+    
+    def transfer_cur_state(self, tokens: List[int]):
+        for token in tokens:
+            self.cur_index = self.transfer_state(self.cur_index, token)
+    
+    def transfer_state(self, index: int, token: int):
+        state = self.states[index]
+        while index != 0 and token not in state.next:
+            index = state.link
+            state = self.states[index]
+        if token in state.next:
+            index = state.next.get(token)
+        else:
+            index = 0
+        return index
+
+    def get_tree_tokens(self, start_token: int, tree: List[List[int]]):
+        tree_tokens: List[int] = [start_token] + [None] * (len(tree) - 1)
+        tree_indices: List[int] = [None] * len(tree)
+        tree_levels: List[int] = [-1] * len(tree)
+        pred_ids = self.sam_online.lookup(start_token)
+        index = self.transfer_state(self.cur_index, start_token)
+        tree_indices[0] = index
+        if pred_ids[0] != -1:
+            tree_levels[0] = 0
+        for node_id, childs in enumerate(tree):
+            if len(childs) == 0:
+                continue
+            index = tree_indices[node_id]
+            level = tree_levels[node_id]
+            topk_tokens = self.get_topk_tokens(index, pred_ids, level)
+            for child_id, child in enumerate(childs):
+                token = topk_tokens[child_id]
+                next_index = self.transfer_state(index, token)
+                next_level = -1 if (child_id > 0 or level == -1) else level + 1
+                tree_tokens[child] = token
+                tree_indices[child] = next_index
+                tree_levels[child] = next_level
+        return tree_tokens, tree_indices
+
+    def get_topk_tokens(self, 
+        index: int,
+        pred_ids: int,
+        level: int,
+    ):
+        if level == -1 or pred_ids[level] == -1:
+            topk_tokens = [item[0] for item in self.sampling_states[index].topk_tokens]
+        else:
+            topk_tokens = [pred_ids[level]] + [item[0] for item in self.sampling_states[index].topk_tokens]
+        if self.k > len(topk_tokens):
+            n = self.k - len(topk_tokens)
+            topk_tokens.extend([1919] * n)
+        return topk_tokens
+    
+    def set_state_index(self, index: int):
+        self.cur_index = index
 
     def update_sam_online(self, tokens: List[int]):
         self.sam_online.add_tokens(tokens)
