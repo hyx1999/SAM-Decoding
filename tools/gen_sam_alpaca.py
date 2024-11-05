@@ -8,8 +8,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--model_name', type=str, default='/data/models/vicuna-7b-v1.3')
 parser.add_argument('--sam_data_path', type=str, default='sam_data/sam_dialogues')
 parser.add_argument('--cutoff_len', type=int, default=2048)
-parser.add_argument('--n_gram', type=int, default=8)
-parser.add_argument('--k', type=int, default=8)
+parser.add_argument('--n_predicts', type=int, default=10)
 parser.add_argument('--sam_path', type=str, default="local_cache/sam_alpaca.pkl")
 args = parser.parse_args()
 
@@ -44,7 +43,7 @@ batch_tokens = sam_data.map(
 for i in range(len(tokenizer)):
     batch_tokens.append([i])
 
-samd_config = SamdConfig(n_gram=args.n_gram, k=args.k)
+samd_config = SamdConfig(n_predicts=args.n_predicts)
 
 sam = build_sam(samd_config, batch_tokens, tokenizer.eos_token_id)
 
