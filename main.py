@@ -12,6 +12,7 @@ from samd import (
     SamdConfig, 
     SamdModel, 
     SamdGenerationConfig,
+    DraftModel,
     load_sam
 )
 import time
@@ -20,12 +21,11 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--sam_path', type=str, required=True)
     parser.add_argument('--model_path', type=str, required=True)
-    parser.add_argument('--samd_n_gram', type=int, default=8)
-    parser.add_argument('--samd_k', type=int, default=8)
+    parser.add_argument('--samd_n_predicts', type=int, default=15)
     parser.add_argument('--max_new_tokens', type=int, default=512)
-    parser.add_argument('--max_cache_len', type=int, default=1024)
-    parser.add_argument('--device', type=str, default="cuda", choices=['cuda', 'cpu'])
+    parser.add_argument('--max_cache_len', type=int, default=2048)
     parser.add_argument('--dtype', type=str, default='float16', choices=['float16', 'float32'])
+    parser.add_argument('--device', type=str, default="cuda", choices=['cuda', 'cpu'])
     args = parser.parse_args()
     args.dtype = {
         'float16': torch.float16,
@@ -33,7 +33,7 @@ def parse_args():
     }[args.dtype]
     return args
 
-
+@torch.inference_mode()
 def generate(args, inputs, model, tokenizer):
     assert inputs.input_ids.shape[-1] + args.max_new_tokens <= args.max_cache_len
     gen_config = GenerationConfig(
@@ -51,20 +51,20 @@ def generate(args, inputs, model, tokenizer):
     print("model response:\n{}".format(repr(response)))
 
 
+@torch.inference_mode()
 def samd_generate(args, inputs, model, tokenizer):
     assert inputs.input_ids.shape[-1] + args.max_new_tokens <= args.max_cache_len
     sam = load_sam(args.sam_path)
-    
-    samd_config = SamdConfig(n_gram=args.samd_n_gram, k=args.samd_k)
+    samd_config = SamdConfig(n_predicts=args.samd_n_predicts)
+    draft = DraftModel(samd_config, sam_static=sam)
     samd_model = SamdModel(
-        samd_config, model, sam, 
+        samd_config, 
+        model, 
+        draft, 
         tokenizer.eos_token_id,
-        args.device, 
         args.dtype,
+        args.device,
     )
-    
-    assert sam.n_gram == samd_config.n_gram
-    assert sam.k == samd_config.k
     
     gen_config = SamdGenerationConfig(
         max_new_tokens=args.max_new_tokens,
@@ -88,12 +88,14 @@ def main():
         args.model_path, 
         torch_dtype=args.dtype, 
         device_map=args.device,
-        # attn_implementation="eager",
     )
+    model.eval()
     
     # prompts = ["A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n\nUSER: Give three tips for staying healthy.\n\nASSISTANT: "]
     
-    prompts = ['A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user\'s questions.\n\nUSER: Please generate the following: "1, 2, 3, 4, 5, 6, 7, 8, 9, 10".\n\nASSISTANT: ']
+    # prompts = ['A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user\'s questions.\n\nUSER: Please generate the following: "1, 2, 3, 4, 5, 6, 7, 8, 9, 10".\n\nASSISTANT: ']
+    
+    prompts = ["A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user\'s questions.\n\nUSER: Embrace the role of Sheldon from \"The Big Bang Theory\" as we delve into our conversation. Don\u2019t start with phrases like \"As Sheldon\". Let's kick things off with the following question: \"What is your opinion on hand dryers?\"\n\nASSISTANT: "]
 
     inputs = tokenizer(
         prompts, 
