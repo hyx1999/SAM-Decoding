@@ -3,11 +3,26 @@
 Usage:
 python3 gen_model_answer.py --model-path lmsys/fastchat-t5-3b-v1.0 --model-id fastchat-t5-3b-v1.0
 """
+# adapted from fastchat: https://github.com/lm-sys/FastChat/blob/main/fastchat/llm_judge/gen_model_answer.py
+
+import json
+import os
+import time
+import torch
+import numpy as np
+import shortuuid
+
+from fastchat.llm_judge.common import load_questions
+from fastchat.model import get_conversation_template
+from tqdm import tqdm
+
 import argparse
 from fastchat.utils import str_to_torch_dtype
-from evaluation.eval import run_eval, reorg_answer_file
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
 from samd import SamdConfig, SamdModel, SamdGenerationConfig, DraftModel, load_sam
+from evaluation.profile_entry import run_profile
+from profile_utils import export_result
+
 
 def samd_forward(
     inputs, 
@@ -103,6 +118,8 @@ if __name__ == "__main__":
         type=str,
         default="local_cache/sam_mini.pkl"
     )
+    parser.add_argument('--samd_n_gram', type=int, default=8)
+    parser.add_argument('--samd_k', type=int, default=8)
     args = parser.parse_args()
 
     question_file = f"evaluation/data/{args.bench_name}/question.jsonl"
@@ -119,7 +136,6 @@ if __name__ == "__main__":
         torch_dtype=str_to_torch_dtype(args.dtype),
         low_cpu_mem_usage=True,
         device_map="cuda",
-        attn_implementation="eager",
     )
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
@@ -141,7 +157,7 @@ if __name__ == "__main__":
     else:
         do_sample = False
 
-    run_eval(
+    run_profile(
         model=samd_model,
         tokenizer=tokenizer,
         forward_func=samd_forward,
@@ -158,4 +174,4 @@ if __name__ == "__main__":
         do_sample=do_sample,
     )
 
-    reorg_answer_file(answer_file)
+    print(export_result())

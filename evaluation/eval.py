@@ -152,7 +152,7 @@ def get_model_answers(
             steps.append(int(step))
             new_tokens.append(int(new_token))
             wall_time.append(total_time)
-            conv.messages[-1][-1] = output
+            conv.messages[-1][-1] = output        
     print('Warmup done')
 
     accept_lengths_tree = []
