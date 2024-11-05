@@ -5,50 +5,43 @@ from copy import deepcopy
 from collections import deque
 from tqdm import tqdm
 
-from .sam_online import SAMOnline
-
-
 class SAM:
-    
-    @dataclass
-    class SamplingState:
-        topk_tokens: List[Tuple[int, float]]
-    
+   
     @dataclass
     class SAMState:
         next: dict[int, int]
         link: int
         length: int
-        endpos_cnt: int
+        endpos: int
 
-    @staticmethod
-    def build(
-        batch_tokens: List[List[int]], 
-        eos_token: int,
-        n_gram: int,
-        k: int,
-        verbose: bool =True
-    ):
-        sam = SAM(n_gram=n_gram, k=k)
-        sam.build_states(batch_tokens, eos_token, verbose)
-        sam.count_endpos(batch_tokens, eos_token, verbose)
-        sam.build_sampling_states(k, eos_token, verbose)
-        sam.state_pruning(n_gram, verbose)
-        return sam
-
-    def __init__(self, n_gram: int, k: int):
-        self.n_gram = n_gram
-        self.k = k
-        self.states: List[SAM.SAMState] = [SAM.SAMState(next={}, link=-1, length=0, endpos_cnt=0)]
-        self.sampling_states: List[SAM.SamplingState] = None
+    def __init__(self, n_predicts: int = 11):
+        self.n_predicts = n_predicts
+        self.states: List[SAM.SAMState] = [SAM.SAMState(next={}, link=-1, length=0, endpos=0)]
+        self.input_ids: List[int] = [-1]
         self.last = 0
+        self.max_length = 0
         
+        # params needed to be reset for each query
         self.cur_index = 0
-        self.sam_online: SAMOnline = None
+        self.cur_length = 0
+    
+    def reset(self):
+        raise NotImplementedError
+    
+    def expand_state(self, state: SAMState):
+        new_index = len(self.states)
+        self.states.append(state)
+        return new_index
 
-    def add_token(self, token: int):
-        cur = len(self.states)
-        self.states.append(self.SAMState(next={}, link=-1, length=self.states[self.last].length + 1, endpos_cnt=0))
+    def add_state(self, token: int):
+        self.max_length += 1
+        cur = self.expand_state(
+            SAM.SAMState(
+                next={}, link=-1, 
+                length=self.max_length, 
+                endpos=self.max_length
+            )
+        )
         p = self.last
         while p != -1 and token not in self.states[p].next:
             self.states[p].next[token] = cur
@@ -60,163 +53,93 @@ class SAM:
             if self.states[p].length + 1 == self.states[q].length:
                 self.states[cur].link = q
             else:
-                clone = len(self.states)
-                self.states.append(deepcopy(self.states[q]))
+                clone = self.expand_state(deepcopy(self.states[q]))
                 self.states[clone].length = self.states[p].length + 1
                 while p != -1 and self.states[p].next[token] == q:
                     self.states[p].next[token] = clone
                     p = self.states[p].link
                 self.states[q].link = self.states[cur].link = clone
         self.last = cur
+           
+    def transfer_state(self, index: int, length: int, token: int):
+        while index != 0 and token not in self.states[index].next:
+            index = self.states[index].link
+            length = self.states[index].length
+        if token in self.states[index].next:
+            index = self.states[index].next[token]
+            length += 1
+        else:
+            index = length = 0
+        return index, length
     
-    def build_states(self, batch_tokens: List[List[int]], eos_token: int, verbose: bool):
-        for tokens in tqdm(batch_tokens, desc="build sam states...", disable=not verbose):
-            for token in tokens:
-                self.add_token(token)
-            if tokens[-1] != eos_token:
-                self.add_token(eos_token)
-
-    def count_endpos(self, batch_tokens: List[List[int]], eos_token: int, verbose: bool):
-        index = 0
-        for tokens in tqdm(batch_tokens, desc="count endpos...", disable=not verbose):
-            for token in tokens:
-                index = self.states[index].next[token]
-                self.states[index].endpos_cnt += 1
-            if tokens[-1] != eos_token:
-                index = self.states[index].next[eos_token]
-                self.states[index].endpos_cnt += 1
-        childs_cnt = [0 for _ in range(len(self.states))]
-        for i in range(1, len(self.states)):
-            childs_cnt[self.states[i].link] += 1
-        q = deque([i for i in range(len(self.states)) if childs_cnt[i] == 0])
-        while len(q) != 0:
-            u = q.popleft()
-            if u == 0:
-                continue
-            v = self.states[u].link
-            self.states[v].endpos_cnt += self.states[u].endpos_cnt
-            childs_cnt[v] -= 1
-            if childs_cnt[v] == 0:
-                q.append(v)
+    def transfer_cur_state(self, token: int):
+        self.cur_index, self.cur_length = \
+            self.transfer_state(self.cur_index, self.cur_length, token)
     
-    def build_sampling_states(self, k: int, eos_token: int, verbose: bool):
-        self.sampling_states = [SAM.SamplingState(topk_tokens=[(None, None)] * k) for _ in range(len(self.states))]
-        childs = [[] for _ in range(len(self.states))]
-        for state_id, state in enumerate(self.states):
-            if state.link != -1:
-                childs[state.link].append(state_id)
-        
-        index_list: List[int] = []
-        dq = deque([0])
-        while len(dq) != 0:
-            u = dq.popleft()
-            index_list.append(u)
-            for v in childs[u]:
-                dq.append(v)
-        
-        for i in tqdm(index_list, desc="build sampling states...", disable=not verbose, total=len(self.states)):
-            state, samping_state = self.states[i], self.sampling_states[i]
-            topk = sorted(
-                [(token, self.states[next_id].endpos_cnt / state.endpos_cnt) for token, next_id in state.next.items()],
-                key=lambda item: item[1],
-                reverse=True
-            )[:k]
-            if len(topk) == 0:
-                topk.append((eos_token, 0.0))
-            samping_state.topk_tokens = topk
-
-    def state_pruning(self, n_gram: int, verbose: bool):
-        mask = [True] * len(self.states)
-        for i, state in tqdm(enumerate(self.states), 
-                             desc="state pruning...", disable=not verbose, total=len(self.states)):
-            if state.link == -1:
-                continue
-            if self.states[state.link].length + 1 > n_gram:
-                mask[i] = False
-        id_map = {}
-        for i in range(len(mask)):
-            if mask[i]:
-                id_map[i] = len(id_map)
-        id_map[-1] = -1
-        new_states = [self.states[i] for i in range(len(self.states)) if mask[i]]
-        new_sampling_states = [self.sampling_states[i] for i in range(len(self.states)) if mask[i]]
-        for state in new_states:
-            state.link = id_map[state.link]
-            state.next = {k: id_map[v] for k, v in state.next.items() if v in id_map}
-        self.states = new_states
-        self.sampling_states = new_sampling_states
-
-    def set_k(self, k: int):
-        self.k = k
-        for state in self.sampling_states:
-            state.topk_tokens = state.topk_tokens[:k]
-
-    def reset_state(self):
-        self.cur_index = 0
-        self.sam_online = SAMOnline()
+    def to_anc(self, index: int, length: int):
+        length_to_end = self.max_length - self.states[index].endpos
+        while index != 0 and self.n_predicts > length_to_end:
+            index = self.states[index].link
+            length = self.states[index].length
+            length_to_end = self.max_length - self.states[index].endpos
+        return index, length
     
-    def transfer_cur_state(self, tokens: List[int]):
+    def add_tokens(self, tokens: List[int]):
         for token in tokens:
-            self.cur_index = self.transfer_state(self.cur_index, token)
+            self.add_state(token)
+            self.transfer_cur_state(token)
+        self.input_ids.extend(tokens)
+        self.cur_index, self.cur_length = \
+            self.to_anc(self.cur_index, self.cur_length)
     
-    def transfer_state(self, index: int, token: int):
-        state = self.states[index]
-        while index != 0 and token not in state.next:
-            index = state.link
-            state = self.states[index]
-        if token in state.next:
-            index = state.next.get(token)
-        else:
-            index = 0
-        return index
+    def transfer_tokens(self, tokens: List[int]):
+        for token in tokens:
+            self.transfer_cur_state(token)
+        self.cur_index, self.cur_length = \
+            self.to_anc(self.cur_index, self.cur_length)
 
-    def get_tree_tokens(self, start_token: int, tree: List[List[int]]):
-        tree_tokens: List[int] = [start_token] + [None] * (len(tree) - 1)
-        tree_indices: List[int] = [None] * len(tree)
-        tree_levels: List[int] = [-1] * len(tree)
-        pred_ids = self.sam_online.lookup(start_token)
-        index = self.transfer_state(self.cur_index, start_token)
-        tree_indices[0] = index
-        if pred_ids[0] != -1:
-            tree_levels[0] = 0
-        for node_id, childs in enumerate(tree):
-            if len(childs) == 0:
-                continue
-            index = tree_indices[node_id]
-            level = tree_levels[node_id]
-            topk_tokens = self.get_topk_tokens(index, pred_ids, level)
-            for child_id, child in enumerate(childs):
-                token = topk_tokens[child_id]
-                next_index = self.transfer_state(index, token)
-                next_level = -1 if (child_id > 0 or level == -1) else level + 1
-                tree_tokens[child] = token
-                tree_indices[child] = next_index
-                tree_levels[child] = next_level
-        return tree_tokens, tree_indices
+    def lookup(self, token: int):
+        index, length = \
+            self.transfer_state(self.cur_index, self.cur_length, token)
+        index, length = \
+            self.to_anc(index, length)
+        endpos = self.states[index].endpos
+        pred_ids = self.input_ids[endpos + 1:endpos + self.n_predicts + 1]
+        if len(pred_ids) < self.n_predicts:
+            pred_ids.extend([0] * (self.n_predicts - len(pred_ids)))
+        return pred_ids, length
 
-    def get_topk_tokens(self, 
-        index: int,
-        pred_ids: int,
-        level: int,
+
+class DynSAM(SAM):
+        
+    def reset(self):
+        self.states: List[SAM.SAMState] = [SAM.SAMState(next={}, link=-1, length=0, endpos=0)]
+        self.input_ids: List[int] = [-1]
+        self.last = 0
+        self.max_length = 0
+        self.cur_index = 0
+        self.cur_length = 0
+
+
+class StaticSAM(SAM):
+
+    def reset(self):
+        self.cur_index = 0
+        self.cur_length = 0
+
+    def add_batch_tokens(self, batch_tokens: List[List[int]], eos_token: int, verbose: bool):
+        for tokens in tqdm(batch_tokens, desc="build sam...", disable=not verbose):
+            self.add_tokens(tokens)
+            if tokens[-1] != eos_token:
+                self.add_tokens([eos_token])
+
+    @staticmethod
+    def build(
+        batch_tokens: List[List[int]], 
+        eos_token: int,
+        n_predict: int,
+        verbose: bool =True
     ):
-        if level == -1 or pred_ids[level] == -1:
-            topk_tokens = [item[0] for item in self.sampling_states[index].topk_tokens]
-        else:
-            topk_tokens = [pred_ids[level]] + [item[0] for item in self.sampling_states[index].topk_tokens]
-        if self.k > len(topk_tokens):
-            n = self.k - len(topk_tokens)
-            topk_tokens.extend([1919] * n)
-        return topk_tokens
-    
-    def set_state_index(self, index: int):
-        self.cur_index = index
-
-    def update_sam_online(self, tokens: List[int]):
-        self.sam_online.add_tokens(tokens)
-
-    def print_state(self):
-        print("state_index:", self.cur_index)
-        print("length: {}, endpos_cnt: {}".format(
-            self.states[self.cur_index].length, 
-            self.states[self.cur_index].endpos_cnt,
-        ))
+        sam = StaticSAM(n_predict)
+        sam.add_batch_tokens(batch_tokens, eos_token, verbose)
+        return sam

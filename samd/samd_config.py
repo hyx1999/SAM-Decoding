@@ -4,8 +4,7 @@ from enum import Enum
 
 @dataclass
 class SamdConfig:
-    n_gram: int = field(default=8)
-    k: int = field(default=8)
+    n_predicts: int = field(default=10)
     tree: Optional[List[List[int]]] = field(default=None)
 
     def __post_init__(self):
@@ -15,7 +14,8 @@ class SamdConfig:
 
 class ForwardType(str, Enum):
     prefill = "prefill"
-    decode = "decode"
+    seq_decode = "seq_decode"
+    tree_decode = "tree_decode"
 
 class ForwardState:
         

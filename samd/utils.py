@@ -6,19 +6,19 @@ from dataclasses import dataclass, field
 from collections import namedtuple
 
 from .samd_config import SamdConfig
-from .sam import SAM
+from .draft import DraftModel, Candidates, CandidateType
+
+from profile_utils import profile_decorator
     
 
 class SamplingMethods(str, Enum):
     typical = "typical"
     nucleus = "nucleus"
 
-Candidates = namedtuple('tree_candidates', ['tree_tokens', 'candidate_tokens', 'candidate_indices', 'candidate_sam_indices'])
-
 @dataclass
 class SamdGenerationConfig:
     max_new_tokens: int = field(default=512)
-    max_cache_len: int = field(default=1024)
+    max_cache_len: int = field(default=2048)
     temperature: float = field(default=0.)
     posterior_threshold: float = field(default=0.3)
     posterior_alpha: float = field(default=0.09)
@@ -54,8 +54,8 @@ def pad_path(path, length, pad_value=-1):
     return path + [pad_value] * (length - len(path))
 
 
-def gen_sd_buffers(
-    tree: List[List[int]], 
+def gen_buffers(
+    samd_config: SamdConfig,
     device: torch.device
 ) -> Dict[str, torch.Tensor]:
     """
@@ -68,6 +68,7 @@ def gen_sd_buffers(
     Returns:
     - dict: A dictionary containing buffers related to the SD structure.
     """
+    tree = samd_config.tree
     num_nodes = len(tree)
     
     anc_dict = {0: -1}
@@ -80,7 +81,7 @@ def gen_sd_buffers(
         level_dict[node_id] = level_dict[anc_dict[node_id]] + 1
     
     # Create the attention mask for Medusa
-    samd_attn_mask = torch.eye(num_nodes, num_nodes)
+    tree_attn_mask = torch.eye(num_nodes, num_nodes)
     for node_id in range(num_nodes):
         ancs = [node_id]
         x = node_id
@@ -88,20 +89,41 @@ def gen_sd_buffers(
             ancs.append(x)
             x = anc_dict[x]
         ancs = torch.tensor(ancs, dtype=torch.long)
-        samd_attn_mask[node_id, ancs] = True
-    samd_attn_mask = samd_attn_mask.view(1, 1, num_nodes, num_nodes)
+        tree_attn_mask[node_id, ancs] = True
+    tree_attn_mask = tree_attn_mask.view(1, 1, num_nodes, num_nodes)
     
-    samd_position_ids = torch.zeros((1, num_nodes), dtype=torch.long)
+    tree_position_ids = torch.zeros((1, num_nodes), dtype=torch.long)
     for i in range(num_nodes):
-        samd_position_ids[:, i] = level_dict[i]
+        tree_position_ids[:, i] = level_dict[i]
+    
+    max_level = max(level_dict.values()) + 1
+    retrieve_indices_nest = []
+    for node_id, childs in enumerate(tree):
+        if len(childs) != 0:
+            continue
+        retrieve_indices = [node_id]
+        while retrieve_indices[-1] != 0:
+            retrieve_indices.append(anc_dict[retrieve_indices[-1]])
+        retrieve_indices_nest.append(list(reversed(retrieve_indices)))
+    
+    retrieve_indices_nest = reversed(retrieve_indices_nest)
+    retrieve_indices_nest = [pad_path(x, max_level) for x in retrieve_indices_nest]
+    tree_retrieve_indices = torch.tensor(retrieve_indices_nest, dtype=torch.long)
 
-    sd_buffers = {
-        "samd_attn_mask": samd_attn_mask,
-        "samd_position_ids": samd_position_ids,
+    n_predicts = samd_config.n_predicts
+    seq_position_ids = torch.tensor(range(0, n_predicts + 1), dtype=torch.long).unsqueeze(0)
+
+    tree_buffers = {
+        "seq_attn_mask": None,
+        "seq_position_ids": seq_position_ids,
+        "seq_retrieve_indices": None,
+        "tree_attn_mask": tree_attn_mask,
+        "tree_position_ids": tree_position_ids,
+        "tree_retrieve_indices": tree_retrieve_indices,
     }
     
-    sd_buffers = {k: v.to(device) for k, v in sd_buffers.items()}
-    return sd_buffers
+    tree_buffers = {k: (v.to(device) if v is not None else v) for k, v in tree_buffers.items()}
+    return tree_buffers
 
 
 def get_nucleus_one_token(logits, config: SamdGenerationConfig):
@@ -167,13 +189,13 @@ def get_typical_one_token(logits, config: SamdGenerationConfig):
     sampled_token = torch.multinomial(F.softmax(logits, dim=-1), 1)
     return sampled_token
 
-
+@profile_decorator("gen_candidates")
 def gen_candidates(
-    logits,
-    sam: SAM,
-    sd_config: SamdConfig,
+    logits: torch.Tensor,
+    tree_retrieve_indices: torch.Tensor,
+    draft: DraftModel,
+    samd_config: SamdConfig,
     gen_config: SamdGenerationConfig,
-    eos_token: int,
     device: torch.device,
 ):
     """
@@ -195,32 +217,20 @@ def gen_candidates(
             start_token = get_nucleus_one_token(logits[:, -1], gen_config).item()
         else:
             raise NotImplementedError
-    tree_tokens, tree_indices = sam.get_tree_tokens(start_token, sd_config.tree)
-    candidate_tokens = [[tree_tokens[0]]] + [None] * (len(sd_config.tree) - 1)
-    candidate_indices = [[0]] + [None] * (len(sd_config.tree) - 1)
-    candidate_sam_indices = [[tree_indices[0]]] + [None] * (len(sd_config.tree) - 1)
-    # candidate_indices => sam_indices
-    for node_id, childs in enumerate(sd_config.tree):
-        for child_id in childs:
-            candidate_tokens[child_id] = candidate_tokens[node_id] + [tree_tokens[child_id]]
-            candidate_indices[child_id] = candidate_indices[node_id] + [child_id]
-            candidate_sam_indices[child_id] = candidate_sam_indices[node_id] + [tree_indices[child_id]]
-    
-    max_level = max(len(p) for p in candidate_tokens)
-    candidate_tokens = [pad_path(p, max_level, -1) for p in candidate_tokens]
-    candidate_indices = [pad_path(p, max_level, -1) for p in candidate_indices]
-    candidate_sam_indices = [pad_path(p, max_level, -1) for p in candidate_sam_indices]
-    
-    tree_tokens = torch.tensor(tree_tokens, dtype=torch.long, device=device).unsqueeze(0)
-    candidate_tokens = torch.tensor(candidate_tokens, dtype=torch.long, device=device)
-    candidate_indices = torch.tensor(candidate_indices, dtype=torch.long, device=device)
-    return Candidates(
-        tree_tokens, 
-        candidate_tokens, 
-        candidate_indices, 
-        candidate_sam_indices
-    )
+    candidate_type, tokens = draft.lookup(start_token)
+    if candidate_type == CandidateType.sequence:
+        tokens = torch.tensor([tokens], dtype=torch.long, device=device)
+        candidate_tokens = tokens
+    else:
+        tokens_ext = torch.tensor(tokens + [0], dtype=torch.long, device=device)
+        candidate_tokens = tokens_ext[tree_retrieve_indices]
+        tokens = torch.tensor([tokens], dtype=torch.long, device=device)
 
+    return Candidates(
+        candidate_type,
+        tokens,
+        candidate_tokens,
+    )
 
 def get_nucleus_posterior_mask(logits: torch.Tensor, candidates: torch.Tensor, config: SamdGenerationConfig):
     """
@@ -307,7 +317,7 @@ def get_typical_posterior_mask(logits: torch.Tensor, candidates: torch.Tensor, c
     posterior_mask = (candidates[:, 1:] == sampled_tokens).int()
     return posterior_mask
 
-
+@profile_decorator("eval_posterior")
 def eval_posterior(
     logits: torch.Tensor,
     candidates: torch.Tensor,
