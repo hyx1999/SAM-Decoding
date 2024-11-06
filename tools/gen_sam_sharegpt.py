@@ -10,8 +10,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--model_name', type=str, default='/data/models/vicuna-7b-v1.3')
 parser.add_argument('--sam_data_path', type=str, default='/data/ShareGPT_Vicuna_unfiltered/ShareGPT_V4.3_unfiltered_cleaned_split.json')
 parser.add_argument('--cutoff_len', type=int, default=2048)
-parser.add_argument('--n_gram', type=int, default=8)
-parser.add_argument('--k', type=int, default=4)
 parser.add_argument('--sam_path', type=str, default="local_cache/sam_sharegpt.pkl")
 args = parser.parse_args()
 
@@ -31,7 +29,7 @@ for conversations in tqdm(dataset, total=total_length):
             )
             batch_tokens.append(token_list)
 
-samd_config = SamdConfig(n_gram=args.n_gram, k=args.k)
+samd_config = SamdConfig(n_predicts=15)
 
 sam = build_sam(samd_config, batch_tokens, tokenizer.eos_token_id)
 
