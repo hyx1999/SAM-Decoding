@@ -161,5 +161,5 @@ def get_model_answers(
             conv.messages[-1][-1] = output
     print('Profile done')
     print("steps:", steps)
-    print("new_tokens:", new_token)
+    print("new_tokens:", new_tokens)
     print("wall_time:", wall_time)

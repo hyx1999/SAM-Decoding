@@ -116,7 +116,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--sam_path",
         type=str,
-        default="local_cache/sam_mini.pkl"
+        default="local_cache/sam_none.pkl"
     )
     parser.add_argument('--samd_n_gram', type=int, default=8)
     parser.add_argument('--samd_k', type=int, default=8)
