@@ -7,9 +7,7 @@ cd $(dirname $0)/..
 devices=2
 
 CUDA_VISIBLE_DEVICES=${devices} \
-    python -m evaluation.inference_samd \
+    python -m evaluation.inference_token_recycle \
     --bench-name spec_bench \
     --model-path /data/models/vicuna-7b-v1.3 \
-    --model-id vicuna-7b-v1.3-sam_alpaca-v0.4.2 \
-    --sam_path local_cache/sam_alpaca.pkl \
-    --samd_n_predicts 15
+    --model-id vicuna-7b-v1.3-token_recycle
