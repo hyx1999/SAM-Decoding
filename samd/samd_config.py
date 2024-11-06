@@ -5,6 +5,8 @@ from enum import Enum
 @dataclass
 class SamdConfig:
     n_predicts: int = field(default=10)
+    len_threshold: int = field(default=4)
+    len_bias: int = field(default=4)
     tree: Optional[List[List[int]]] = field(default=None)
 
     def __post_init__(self):
@@ -27,7 +29,7 @@ def load_default_tree():
     import os
     import json
     samd_path = os.path.dirname(__file__)
-    with open(os.path.join(samd_path, "config", "default_tree.json"), "r") as f:
+    with open(os.path.join(samd_path, "config", "token_recycle.json"), "r") as f:
         tree_dict: dict = json.load(f)
     num_node = len(tree_dict)
     tree: List[List[int]] = []

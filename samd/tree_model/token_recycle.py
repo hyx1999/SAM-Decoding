@@ -5,9 +5,10 @@ from copy import deepcopy
 from collections import deque
 from tqdm import tqdm
 
-from .samd_config import SamdConfig
+from ..samd_config import SamdConfig
+from .tree import Tree
 
-class TreeModel:
+class TokenRecycle(Tree):
     
     def __init__(self,
         tree: List[List[int]]
@@ -16,13 +17,10 @@ class TreeModel:
         self.cache = {}
         
     def reset(self):
-        # do nothting
-        pass
+        pass  # do nothting
     
     def update(self, tokens: List[int], topk_nest: List[List[int]]):
-        for token, next_token, topk in zip(tokens, tokens[1:] + [None], topk_nest):
-            if next_token != topk[0] and next_token is not None:
-                topk = [next_token] + topk[:-1]
+        for token, topk in zip(tokens, topk_nest):
             self.cache[token] = topk
     
     def lookup(self, start_token: int) -> List[int]:

@@ -22,8 +22,6 @@ from profile_utils import profile_decorator
 
 Outputs = namedtuple('Outputs', ['output_ids', 'decode_tokens', 'decode_steps', 'accepet_length_per_step'])
 
-TOPK = 4
-
 class SamdModel(nn.Module):
     
     def __init__(self,
@@ -74,9 +72,7 @@ class SamdModel(nn.Module):
         self.tree_position_ids = buffers["tree_position_ids"]
         self.tree_retrieve_indices = buffers["tree_retrieve_indices"]
     
-    def reset_cache(
-        self,
-    ):
+    def reset_static_cache(self):
         max_cache_len = self.gen_config.max_cache_len + self.tree_size
         if self.cache is not None and self.cache.max_cache_len == max_cache_len:
             self.cache.reset()
@@ -97,11 +93,7 @@ class SamdModel(nn.Module):
             return self.cache.get_seq_length() + self.tree_size <= self.cache.max_cache_len
         else:
             return True
-    
-    def logits_to_topk(self, logits: torch.Tensor) -> List[List[int]]:
-        topk_nest = logits.topk(k=TOPK).indices.cpu().tolist()
-        return topk_nest
-    
+        
     def prefill(self, 
         input_ids: torch.Tensor, 
         attention_mask: torch.Tensor,
@@ -113,7 +105,11 @@ class SamdModel(nn.Module):
             attention_mask=attention_mask,
             past_key_values=self.cache,
         ).logits
-        self.draft.update(input_ids_list, self.logits_to_topk(logits.squeeze(0)))
+        self.draft.update(
+            input_ids_list,
+            input_ids.squeeze(0),
+            logits.squeeze(0),
+        )
         self.cache.set_length()
         return logits[:, -1:]  # [1, 1, D]
     
@@ -149,6 +145,8 @@ class SamdModel(nn.Module):
 
         best_candidate, accept_length = eval_posterior(candidate_logits, candidates.candidate_tokens, self.gen_config)
         new_logits, new_tokens = self.update_state(
+            input_ids.squeeze(0),
+            tree_logits.squeeze(0),
             best_candidate, 
             accept_length,
             candidate_logits,
@@ -159,6 +157,8 @@ class SamdModel(nn.Module):
 
     @profile_decorator("update_state")
     def update_state(self,
+        tree_tokens: torch.Tensor,
+        tree_logits: torch.Tensor,
         best_candidate: torch.Tensor, 
         accept_length: torch.Tensor,
         candidate_logits: torch.Tensor,
@@ -178,7 +178,11 @@ class SamdModel(nn.Module):
         # print("indices:", indices)
         # print("accepet_length:", accept_length)
         
-        self.draft.update(tokens, self.logits_to_topk(logits))
+        self.draft.update(
+            tokens, 
+            tree_tokens,
+            tree_logits,
+        )
         self.cache.select_indices(indices, accept_length.item())
         
         logits = logits[-1].view(1, 1, -1)
@@ -196,9 +200,10 @@ class SamdModel(nn.Module):
         self.gen_config = generation_config
 
         assert input_ids.shape[0] == 1, "Only support batch_size == 1"  # [1, N]
-        
-        self.cache = SamdCache(self.lm.config.num_hidden_layers)
-        # self.reset_cache()
+
+        # self.reset_static_cache()        
+        self.cache = SamdCache(self.lm.config.num_hidden_layers)  # use dynamic cache
+
         self.draft.reset()
         
         input_ids_list = input_ids.squeeze(0).cpu().tolist()
@@ -222,7 +227,5 @@ class SamdModel(nn.Module):
                 break
             if decode_tokens >= generation_config.max_new_tokens:
                 break
-            # if self.check_cache() == False:
-            #     break
         input_ids_list = [input_ids_list[:input_length + generation_config.max_new_tokens]]
         return Outputs(input_ids_list, decode_tokens, decode_steps, accepet_length_per_step)
