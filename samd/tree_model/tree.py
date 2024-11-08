@@ -6,8 +6,17 @@ from collections import deque
 from tqdm import tqdm
 
 
-class Tree:
+class TreeModel(torch.nn.Module):
     
+    def __init__(self,
+        samd_config=None,
+        lm_config=None,
+        lm=None,
+        dtype: torch.dtype=None,
+        device: str=None,
+    ) -> None:
+        super().__init__()
+
     def reset(self):
         raise NotImplementedError
     
@@ -15,4 +24,7 @@ class Tree:
         raise NotImplementedError
     
     def lookup(self, start_token: int) -> List[int]:
+        raise NotImplementedError
+
+    def gen_buffers(self):
         raise NotImplementedError
