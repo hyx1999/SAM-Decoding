@@ -118,10 +118,18 @@ if __name__ == "__main__":
         type=str,
         default="local_cache/sam_none.pkl"
     )
-    parser.add_argument("--tree_method", type=str, default="eagle")
+    parser.add_argument(
+        "--samd_len_threshold",
+        type=int,
+        default=5
+    )
+    parser.add_argument(
+        "--samd_len_bias",
+        type=int,
+        default=5
+    )
+    parser.add_argument("--tree_method", type=str, default="eagle2")
     parser.add_argument("--tree_model_path", type=str, default="/data/models/EAGLE-Vicuna-7B-v1.3")
-    parser.add_argument('--samd_n_gram', type=int, default=8)
-    parser.add_argument('--samd_k', type=int, default=8)
     args = parser.parse_args()
 
     question_file = f"evaluation/data/{args.bench_name}/question.jsonl"
@@ -147,6 +155,8 @@ if __name__ == "__main__":
         n_predicts=args.samd_n_predicts,
         tree_method=args.tree_method,
         tree_model_path=args.tree_model_path,
+        len_threshold=args.samd_len_threshold,
+        len_bias=args.samd_len_bias,
     )
     draft = DraftModel(
         samd_config, 
