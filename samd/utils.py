@@ -53,7 +53,8 @@ def gen_candidates(
     """
     # Greedy decoding: Select the most probable candidate from the original logits.
     start_token = torch.argmax(logits[:, -1]).item()
-    candidate_type, tokens = draft.lookup(start_token)
+    candidate_type, tokens, buffers_kwargs = draft.lookup(start_token)
+    tree_retrieve_indices = buffers_kwargs.get("tree_retrieve_indices", tree_retrieve_indices)
     if candidate_type == CandidateType.sequence:
         tokens = torch.tensor([tokens], dtype=torch.long, device=device)
         candidate_tokens = tokens
@@ -66,6 +67,7 @@ def gen_candidates(
         candidate_type,
         tokens,
         candidate_tokens,
+        buffers_kwargs,
     )
 
 

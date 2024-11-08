@@ -4,10 +4,10 @@ import torch
 import torch.nn as nn
 from dataclasses import dataclass, field
 from collections import namedtuple
-from typing import Optional, Union, List, Literal, Tuple
+from typing import Optional, Union, List, Literal, Tuple, Dict
 from types import MethodType
 from transformers import LlamaForCausalLM
-from .samd_config import SamdConfig, ForwardState, ForwardType
+from .samd_config import SamdConfig, ForwardState, ForwardType, MaskState
 from .utils import (
     OptionalTensor,
     CandidateType,
@@ -17,7 +17,7 @@ from .utils import (
 )
 from .cache import SamdCache, SamdStaticCache
 from .draft import DraftModel
-from .model_patch import attn_patch_dict
+from .model_patch import patch_dict, attn_patch_dict
 from profile_utils import profile_decorator
 
 Outputs = namedtuple('Outputs', ['output_ids', 'decode_tokens', 'decode_steps', 'accepet_length_per_step'])
@@ -47,11 +47,11 @@ class SamdModel(nn.Module):
         self.tree_attn_mask: torch.Tensor = None
         self.tree_position_ids: torch.Tensor = None
         self.tree_retrieve_indices: torch.Tensor = None
-        self.tree_size: int = len(samd_config.tree)
         
         # buffers
         self.cache: SamdCache = None
         self.forward_state = ForwardState(None)
+        self.mask_state = MaskState(None)
         
         self.init_buffers()
         self.register_forward_patch()
@@ -59,12 +59,17 @@ class SamdModel(nn.Module):
     def register_forward_patch(self):
         for module_name, module in self.lm.named_modules():
             module_name = "root" if module_name == "" else "root.{}".format(module_name)
-            if type(module) in attn_patch_dict:
-                setattr(module, "tree_attn_mask", self.tree_attn_mask)
-                setattr(module, "forward_state", self.forward_state)
-                for fn_name, fn in attn_patch_dict[type(module)]:
+            if type(module) in patch_dict:
+                for fn_name, fn in patch_dict[type(module)]:
                     setattr(module, fn_name, MethodType(fn, module))
                     print("setattr {} -> {}".format(module_name, fn_name))
+            if type(module) in attn_patch_dict:
+                for fn_name, fn in attn_patch_dict[type(module)]:
+                    setattr(module, fn_name, MethodType(fn, module))
+                    setattr(module, "mask_state", self.mask_state)
+                    setattr(module, "forward_state", self.forward_state)
+                    print("attn setattr {} -> {}".format(module_name, fn_name))
+
     
     def init_seq_position_ids(self):
         return torch.tensor(
@@ -79,6 +84,13 @@ class SamdModel(nn.Module):
         self.tree_attn_mask = buffers["tree_attn_mask"]
         self.tree_position_ids = buffers["tree_position_ids"]
         self.tree_retrieve_indices = buffers["tree_retrieve_indices"]
+        self.mask_state.set_state(self.tree_attn_mask)
+    
+    def update_buffers(self, buffers_kwargs: Dict[str, Optional[torch.Tensor]]):
+        self.tree_attn_mask = buffers_kwargs.get("tree_attn_mask", self.tree_attn_mask)
+        self.tree_position_ids = buffers_kwargs.get("tree_position_ids", self.tree_position_ids)
+        self.tree_retrieve_indices = buffers_kwargs.get("tree_retrieve_indices", self.tree_retrieve_indices)
+        self.mask_state.set_state(self.tree_attn_mask)
         
     def prefill(self, 
         input_ids: torch.Tensor, 
@@ -115,7 +127,7 @@ class SamdModel(nn.Module):
             self.gen_config, 
             self.device
         )
-        # print("candidates:", candidates)
+        self.update_buffers(candidates.buffers_kwargs)
         if candidates.type == CandidateType.sequence:
             self.forward_state.forward_type = ForwardType.seq_decode
             position_ids = self.seq_position_ids + length
@@ -129,6 +141,7 @@ class SamdModel(nn.Module):
             past_key_values=self.cache,
         )
         tree_logits = outputs.logits
+        # print("tree_logits.shape:", tree_logits.shape)
         if self.samd_config.use_last_hidden_states:
             tree_last_hidden_states = OptionalTensor(outputs.last_hidden_states)
         else:
@@ -155,6 +168,7 @@ class SamdModel(nn.Module):
             candidate_indices,
             candidate_last_hidden_states,
         )
+        # print("new_tokens:\n{}".format(new_tokens))
         return new_logits, new_tokens
 
     @profile_decorator("SamdModel.update_state")

@@ -5,13 +5,11 @@ from typing import List, Tuple, Dict
 
 from ...samd_config import SamdConfig
 from ..tree import TreeModel
-from .eagle_config import EagleConfig
-from .eagle_model import EagleModel
-
-from .utils import gen_buffers, TOPK
+from .eagle2_config import Eagle2Config
+from .eagle2_model import Eagle2Model
 
 
-class Eagle(TreeModel):
+class Eagle2(TreeModel):
     
     def __init__(self,
         config: SamdConfig,
@@ -20,18 +18,16 @@ class Eagle(TreeModel):
         device: str,
     ) -> None:
         super().__init__()
-        self.tree = config.tree
         self.dtype = dtype
         self.device = device
         self.head: torch.nn.Linear = lm.lm_head
-        self.model: EagleModel = EagleModel(config=EagleConfig(**config.tree_config))\
+        self.model: Eagle2Model = Eagle2Model(config=Eagle2Config(**config.tree_config))\
             .to(device=device, dtype=dtype)
-        self.model.gen_buffers(config.tree, device)
         self.model.load_weight(config.tree_model_path)
+        self.model.init_tree()
         
         self.accpet_tokens: torch.Tensor = None
         self.accept_hidden_states: torch.Tensor = None
-        self.tree_indices: torch.Tensor = None
     
     def reset(self):
         self.model.stable_kv = None
@@ -55,18 +51,17 @@ class Eagle(TreeModel):
         accpet_tokens = torch.cat((self.accpet_tokens, start_token), dim=-1)
         accept_hidden_states = self.accept_hidden_states
         self.accpet_tokens = self.accept_hidden_states = None
-        pred_ids: torch.Tensor = self.model.topk_genrate(
+        pred_ids, buffers_kwargs = self.model.topk_genrate(
             accept_hidden_states,
             accpet_tokens,
             self.head,
-            top_k=TOPK
-        )[0]
-        pred_ids = torch.cat([start_token, pred_ids.view(-1)])
-        pred_ids = pred_ids[self.tree_indices].tolist()
-        buffers_kwargs = {}
+        )
+        pred_ids = pred_ids.view(-1).tolist()
         return pred_ids, buffers_kwargs
     
     def gen_buffers(self):
-        buffers = gen_buffers(self.tree, self.device)
-        self.tree_indices = buffers["tree_indices"]
-        return buffers
+        return {
+            "tree_attn_mask": None,
+            "tree_position_ids": None,
+            "tree_retrieve_indices": None,
+        }

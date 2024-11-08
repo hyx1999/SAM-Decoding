@@ -56,7 +56,8 @@ class TokenRecycle(TreeModel):
             topk = self.cache[token]
             for child_id, child in enumerate(childs):
                 tree_tokens[child] = topk[child_id]
-        return tree_tokens
+        buffers_kwargs = {}
+        return tree_tokens, buffers_kwargs
 
     def gen_buffers(self) -> Dict[str, torch.Tensor]:
         return gen_buffers(self.samd_config.tree, self.device)

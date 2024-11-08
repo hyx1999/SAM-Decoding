@@ -16,7 +16,7 @@ class CandidateType(str, Enum):
     sequence = "sequence"
     tree = "tree"
 
-Candidates = namedtuple('Candidates', ['type', 'tokens', 'candidate_tokens'])
+Candidates = namedtuple('Candidates', ['type', 'tokens', 'candidate_tokens', 'buffers_kwargs'])
 
 TOPK = 8
 
@@ -57,9 +57,9 @@ class DraftModel(torch.nn.Module):
         else:
             pred, len = pred_static, match_static        
         if len >= self.len_threshold:
-            return CandidateType.sequence, [start_token] + pred
+            return (CandidateType.sequence, [start_token] + pred, {})
         else:
-            return CandidateType.tree, self.tree_model.lookup(start_token)
+            return (CandidateType.tree,) + self.tree_model.lookup(start_token)
     
     @profile_decorator("DraftModel.update")
     def update(self, 
