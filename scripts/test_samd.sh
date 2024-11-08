@@ -4,7 +4,7 @@ set -x
 
 cd $(dirname $0)/..
 
-devices=2
+devices=3
 
 CUDA_VISIBLE_DEVICES=${devices} \
     python -m tests.test_samd \
