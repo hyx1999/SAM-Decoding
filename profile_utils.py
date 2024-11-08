@@ -27,7 +27,7 @@ def profile_decorator(fn_name: str):
         return wrapper
     return decorator
 
-def export_result(root_name: str = "decode"):
+def export_result(root_name: str = "SamdModel.decode"):
     result = []
     if len(fn_dict) == 0:
         return None
