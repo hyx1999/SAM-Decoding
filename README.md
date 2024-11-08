@@ -28,7 +28,7 @@ They have two main limitations:
 
 In contrast, SAM-Decoding uses [suffix automaton](https://en.wikipedia.org/wiki/Suffix_automaton) to generate output by finding the longest suffix match of the current generated text from the prompt and the text base. Thanks to the excellent properties of the suffix automaton, the average time complexity of finding the longest suffix match is O(1), which is faster and more accurate than PLD and REST.
 
-At the same time, since SAM-Decoding can compute the longest matching length, it can be combined with the draft model based speculative decoding methods, such as eagle and token recycling that is, automatically selecting to use the retrieval result as the draft or the generation result of the draft model as the draft according to the suffix matching length.
+At the same time, since SAM-Decoding can compute the longest matching length, it can be combined with the draft model based speculative decoding methods, such as [EAGLE](https://github.com/SafeAILab/EAGLE) and [Token Recycle](https://arxiv.org/abs/2408.08696) that is, automatically selecting to use the retrieval result as the draft or the generation result of the draft model as the draft according to the suffix matching length.
 
 ## Experiment
 
