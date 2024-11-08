@@ -24,6 +24,8 @@ def parse_args():
     parser.add_argument('--samd_n_predicts', type=int, default=15)
     parser.add_argument('--max_new_tokens', type=int, default=512)
     parser.add_argument('--max_cache_len', type=int, default=2048)
+    parser.add_argument("--tree_method", type=str, default="eagle")
+    parser.add_argument("--tree_model_path", type=str, default="/data/models/EAGLE-Vicuna-7B-v1.3")
     parser.add_argument('--dtype', type=str, default='float16', choices=['float16', 'float32'])
     parser.add_argument('--device', type=str, default="cuda", choices=['cuda', 'cpu'])
     args = parser.parse_args()
@@ -55,8 +57,18 @@ def generate(args, inputs, model, tokenizer):
 def samd_generate(args, inputs, model, tokenizer):
     assert inputs.input_ids.shape[-1] + args.max_new_tokens <= args.max_cache_len
     sam = load_sam(args.sam_path)
-    samd_config = SamdConfig(n_predicts=args.samd_n_predicts)
-    draft = DraftModel(samd_config, sam_static=sam)
+    samd_config = SamdConfig(
+        n_predicts=args.samd_n_predicts,
+        tree_method=args.tree_method,
+        tree_model_path=args.tree_model_path,
+    )
+    draft = DraftModel(
+        samd_config, 
+        sam_static=sam,
+        lm=model,
+        dtype=args.dtype,
+        device=args.device
+    )
     samd_model = SamdModel(
         samd_config, 
         model, 
@@ -93,9 +105,9 @@ def main():
     
     # prompts = ["A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n\nUSER: Give three tips for staying healthy.\n\nASSISTANT: "]
     
-    # prompts = ['A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user\'s questions.\n\nUSER: Please generate the following: "1, 2, 3, 4, 5, 6, 7, 8, 9, 10".\n\nASSISTANT: ']
+    prompts = ['A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user\'s questions.\n\nUSER: Please generate the following: "1, 2, 3, 4, 5, 6, 7, 8, 9, 10".\n\nASSISTANT: ']
     
-    prompts = ["A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user\'s questions.\n\nUSER: Embrace the role of Sheldon from \"The Big Bang Theory\" as we delve into our conversation. Don\u2019t start with phrases like \"As Sheldon\". Let's kick things off with the following question: \"What is your opinion on hand dryers?\"\n\nASSISTANT: "]
+    # prompts = ["A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user\'s questions.\n\nUSER: Embrace the role of Sheldon from \"The Big Bang Theory\" as we delve into our conversation. Don\u2019t start with phrases like \"As Sheldon\". Let's kick things off with the following question: \"What is your opinion on hand dryers?\"\n\nASSISTANT: "]
 
     inputs = tokenizer(
         prompts, 
