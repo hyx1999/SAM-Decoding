@@ -32,6 +32,7 @@ def samd_forward(
     temperature: float = 0.0,
     do_sample: bool = False
 ):
+    assert temperature == 0
     max_cache_len = model.lm.config.max_position_embeddings
     input_ids = inputs.input_ids
     outputs = model.generate(
@@ -39,7 +40,6 @@ def samd_forward(
         generation_config=SamdGenerationConfig(
             max_new_tokens=max_new_tokens,
             max_cache_len=max_cache_len,
-            temperature=temperature
         ),
     )
     output_ids = outputs.output_ids
@@ -118,6 +118,8 @@ if __name__ == "__main__":
         type=str,
         default="local_cache/sam_none.pkl"
     )
+    parser.add_argument("--tree_method", type=str, default="eagle")
+    parser.add_argument("--tree_model_path", type=str, default="/data/models/EAGLE-Vicuna-7B-v1.3")
     parser.add_argument('--samd_n_gram', type=int, default=8)
     parser.add_argument('--samd_k', type=int, default=8)
     args = parser.parse_args()
@@ -141,8 +143,18 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
 
     sam = load_sam(args.sam_path)
-    samd_config = SamdConfig(n_predicts=args.samd_n_predicts)
-    draft = DraftModel(samd_config, sam_static=sam)
+    samd_config = SamdConfig(
+        n_predicts=args.samd_n_predicts,
+        tree_method=args.tree_method,
+        tree_model_path=args.tree_model_path,
+    )
+    draft = DraftModel(
+        samd_config, 
+        sam_static=sam,
+        lm=model,
+        dtype=str_to_torch_dtype(args.dtype),
+        device="cuda"
+    )
     samd_model = SamdModel(
         samd_config, 
         model, 
