@@ -42,7 +42,7 @@ Expeiment result on [Spec-Bench](https://github.com/hemingkx/Spec-Bench)
 
 | Models                                                        | Multi-turn Conversation | Translation | Summa-rization | Question Answering | Mathematical Reasoning | Retrieval-aug. Generation | #Mean Accepted Tokens |  Overall  |
 | ------------------------------------------------------------  | :---------------------: | :---------: | :------------: | :----------------: | :--------------------: | :-----------------------: | :-------------------: | :-------: |
-| SAM-Decoding\[EAGLE2\]                                        |          3.02x          |    1.89x    |     2.76x      |       2.19x        |         2.83x          |           2.23x           |         3.49          |   2.49x   |
+| SAM-Decoding\[EAGLE2\]                                        |          3.02x          |    1.89x    |     2.76x      |       2.19x        |         2.83x          |           2.23x           |         4.61          |   2.49x   |
 | [EAGLE2](https://github.com/SafeAILab/EAGLE)                  |          2.87x          |    1.92x    |     2.33x      |       2.20x        |         2.88x          |           2.03x           |         4.36          |   2.38x   |
 | SAM-Decoding\[EAGLE\]                                         |          2.78x          |    1.88x    |     2.65x      |       2.12x        |         2.57x          |           2.10x           |         3.77          |   2.35x   |
 | [EAGLE](https://huggingface.co/blog/assisted-generation)      |          2.63x          |    1.92x    |     2.28x      |       2.11x        |         2.64x          |           1.95x           |         3.57          |   2.27x   |
