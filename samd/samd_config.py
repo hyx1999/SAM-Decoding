@@ -18,13 +18,14 @@ class SamdConfig:
         default="token_recycle"
     )
     tree_model_path: Optional[str] = field(default=None)
+    tree_path: Optional[str] = field(default=None)
     tree: Optional[List[List[int]]] = field(default=None)
     tree_config: Optional[Dict[str, Any]] = field(default=None)
 
     def __post_init__(self):
         if self.tree is None:
             if self.tree_method == "token_recycle":
-                self.tree = load_token_recycle()
+                self.tree = load_token_recycle(self.tree_path)
             elif self.tree_method == "eagle":
                 tree, tree_config = load_eagle(self.tree_model_path)
                 self.tree = tree
@@ -59,14 +60,18 @@ class MaskState:
         self.mask = mask
 
 
-def load_token_recycle():
+def load_token_recycle(tree_path: Optional[str] = None):
+    if tree_path is None:
+        tree_path = "token_recycle.json"
     samd_path = os.path.dirname(__file__)
-    with open(os.path.join(samd_path, "config", "token_recycle.json"), "r") as f:
+    with open(os.path.join(samd_path, "config", tree_path), "r") as f:
         tree_adj: dict = json.load(f)["tree_adj"]
     num_node = len(tree_adj)
     tree: List[List[int]] = []
     for i in range(num_node):
         tree.append(tree_adj[str(i)])
+    print("tree_path:", tree_path)
+    print("len_tree:", len(tree))
     return tree
 
 
