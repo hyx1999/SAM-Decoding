@@ -112,6 +112,11 @@ if __name__ == "__main__":
         type=int,
         default=5
     )
+    parser.add_argument(
+        "--samd_tree_path",
+        type=str,
+        default=None
+    )
     parser.add_argument("--tree_method", type=str, default="eagle2")
     parser.add_argument("--tree_model_path", type=str, default="/data/models/EAGLE-Vicuna-7B-v1.3")
     args = parser.parse_args()
@@ -124,6 +129,9 @@ if __name__ == "__main__":
         answer_file = f"evaluation/data/{args.bench_name}/model_answer/{args.model_id}.jsonl"
 
     print(f"Output to {answer_file}")
+    
+    print("len_bias:", args.samd_len_bias)
+    print("len_threshold:", args.samd_len_threshold)
 
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path,
@@ -142,6 +150,7 @@ if __name__ == "__main__":
         tree_model_path=args.tree_model_path,
         len_threshold=args.samd_len_threshold,
         len_bias=args.samd_len_bias,
+        tree_path=args.samd_tree_path,
     )
     draft = DraftModel(
         samd_config, 
