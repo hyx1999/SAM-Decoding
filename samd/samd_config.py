@@ -27,7 +27,7 @@ class SamdConfig:
             if self.tree_method == "token_recycle":
                 self.tree = load_token_recycle(self.tree_path)
             elif self.tree_method == "eagle":
-                tree, tree_config = load_eagle(self.tree_model_path)
+                tree, tree_config = load_eagle(self.tree_model_path, self.tree_path)
                 self.tree = tree
                 self.tree_config = tree_config
                 self.use_last_hidden_states = True
@@ -75,9 +75,11 @@ def load_token_recycle(tree_path: Optional[str] = None):
     return tree
 
 
-def load_eagle(tree_model_path: str):
+def load_eagle(tree_model_path: str, tree_path: Optional[str] = None):
+    if tree_path is None:
+        tree_path = "eagle.json"
     samd_path = os.path.dirname(__file__)
-    with open(os.path.join(samd_path, "config", "eagle.json"), "r") as f:
+    with open(os.path.join(samd_path, "config", tree_path), "r") as f:
         tree = json.load(f)["tree_choices"]
     with open(os.path.join(tree_model_path, "config.json")) as f:
         tree_config = json.load(f)
