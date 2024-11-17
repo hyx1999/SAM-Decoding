@@ -20,7 +20,7 @@ import argparse
 from fastchat.utils import str_to_torch_dtype
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
 from samd import SamdConfig, SamdModel, SamdGenerationConfig, load_sam
-from profile_utils import enable_decorator, export_result
+from profile_utils import enable_decorator, clear_dict, export_result
 
 def run_profile(
         model,
@@ -37,7 +37,6 @@ def run_profile(
         num_gpus_total,
         **kwargs,
 ):
-    enable_decorator(True)
     questions = load_questions(question_file, question_begin, question_end)
 
     # Split the question file into `num_gpus` files
@@ -158,8 +157,82 @@ def get_model_answers(
             steps.append(int(step))
             new_tokens.append(int(new_token))
             wall_time.append(total_time)
-            conv.messages[-1][-1] = output
-    print('Profile done')
-    print("steps:", steps)
-    print("new_tokens:", new_tokens)
-    print("wall_time:", wall_time)
+            conv.messages[-1][-1] = output        
+    print('Warmup done')
+
+    enable_decorator(True)
+    accept_lengths_tree = []
+    for question in tqdm(questions[:2]):
+        clear_dict()
+        choices = []
+        for i in range(num_choices):
+            cur_accept_lengths_tree = []
+            torch.manual_seed(i)
+            conv = get_conversation_template("vicuna")
+            turns = []
+            steps = []
+            new_tokens = []
+            wall_time = []
+            for j in range(len(question["turns"])):
+                qs = question["turns"][j]
+                conv.append_message(conv.roles[0], qs)
+                conv.append_message(conv.roles[1], None)
+                conv.stop_str = "</s>"
+                prompt = conv.get_prompt()
+                inputs = tokenizer([prompt], return_tensors="pt").to("cuda")
+                input_ids = inputs.input_ids
+                try:
+                    torch.cuda.synchronize()
+                    start_time = time.time()
+                    output_ids, new_token, step, accept_length_tree = forward_func(
+                        inputs,
+                        model,
+                        tokenizer,
+                        max_new_tokens,
+                        **kwargs,
+                    )
+                    torch.cuda.synchronize()
+                    total_time = time.time() - start_time
+                    accept_lengths_tree.extend(accept_length_tree)
+                    output_ids = output_ids[0][len(input_ids[0]):]
+
+                    if conv.stop_token_ids:
+                        stop_token_ids_index = [
+                            i
+                            for i, id in enumerate(output_ids)
+                            if id in conv.stop_token_ids
+                        ]
+                        if len(stop_token_ids_index) > 0:
+                            output_ids = output_ids[: stop_token_ids_index[0]]
+
+                    output = tokenizer.decode(
+                        output_ids,
+                        spaces_between_special_tokens=False,
+                    )
+                    if conv.stop_str and output.find(conv.stop_str) > 0:
+                        output = output[: output.find(conv.stop_str)]
+                    for special_token in tokenizer.special_tokens_map.values():
+                        if isinstance(special_token, list):
+                            for special_tok in special_token:
+                                output = output.replace(special_tok, "")
+                        else:
+                            output = output.replace(special_token, "")
+                    output = output.strip()
+
+                    if conv.name == "xgen" and output.startswith("Assistant:"):
+                        output = output.replace("Assistant:", "", 1).strip()
+                except RuntimeError as e:
+                    print("ERROR question ID: ", question["question_id"])
+                    output = "ERROR"
+
+                turns.append(output)
+                steps.append(int(step))
+                new_tokens.append(int(new_token))
+                wall_time.append(total_time)
+                cur_accept_lengths_tree.extend(accept_length_tree)
+                conv.messages[-1][-1] = output
+            # torch.cuda.empty_cache()
+            choices.append({"index": i, "turns": turns, "decoding_steps": steps, "new_tokens": new_tokens, "wall_time": wall_time,
+                            "accept_lengths": cur_accept_lengths_tree})
+        print(choices[-1])
+        print(export_result(root_name="SamdModel.generate"))
