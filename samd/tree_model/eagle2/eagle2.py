@@ -21,8 +21,10 @@ class Eagle2(TreeModel):
         self.dtype = dtype
         self.device = device
         self.head: torch.nn.Linear = lm.lm_head
-        self.model: Eagle2Model = Eagle2Model(config=Eagle2Config(**config.tree_config))\
-            .to(device=device, dtype=dtype)
+        self.model: Eagle2Model = Eagle2Model(
+            config=Eagle2Config(**config.tree_config),
+            bias=config.tree_config.get("bias", True)
+        ).to(device=device, dtype=dtype)
         self.model.load_weight(config.tree_model_path)
         self.model.init_tree()
         
