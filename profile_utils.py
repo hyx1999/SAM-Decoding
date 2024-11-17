@@ -12,6 +12,9 @@ def enable_decorator(mode: bool):
     global decorator_flag
     decorator_flag = mode
 
+def clear_dict():
+    fn_dict.clear()
+
 def profile_decorator(fn_name: str):
     def decorator(fn):
         @wraps(fn)
@@ -33,7 +36,7 @@ def export_result(root_name: str = "SamdModel.decode"):
         return None
     for name, values in fn_dict.items():
         result.append((
-            name, sum(values) / len(values)
+            name, sum(values)
         ))
     sum_time = dict(result)[root_name]
     df = pd.DataFrame(result, columns=["name", "time"])
