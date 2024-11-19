@@ -1,8 +1,15 @@
 # SAM-Decoding
 
 <p align="center">
-| <b>Paper: coming soon</b></a> |
+| <a href="https://arxiv.org/abs/2411.10666"><b>Paper</b></a> |
 </p>
+
+---
+
+*News* 🔥
+- [2024/11] SAM-Decoding is now available on [arXiv](https://arxiv.org/abs/2411.10666).
+
+---
 
 ## Introduction
 
