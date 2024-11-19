@@ -53,9 +53,12 @@ Expeiment result on [Spec-Bench](https://github.com/hemingkx/Spec-Bench)
 | [EAGLE2](https://github.com/SafeAILab/EAGLE)                  |          2.87x          |    1.92x    |     2.33x      |       2.20x        |         2.88x          |           2.03x           |         4.36          |   2.38x   |
 | SAM-Decoding\[EAGLE\]                                         |          2.78x          |    1.88x    |     2.65x      |       2.12x        |         2.57x          |           2.10x           |         3.77          |   2.35x   |
 | [EAGLE](https://huggingface.co/blog/assisted-generation)      |          2.63x          |    1.92x    |     2.28x      |       2.11x        |         2.64x          |           1.95x           |         3.57          |   2.27x   |
-| SAM-Decoding\[Token Recycle\]                                 |          2.23x          |    1.62x    |     2.54x      |       1.81x        |         2.13x          |           1.87x           |         2.98          |   2.03x   |
+| SAM-Decoding\[Token Recycle\]                                 |          2.48x          |    1.73x    |     2.86x      |       1.98x        |         2.44x          |           2.14x           |         3.03          |   2.27x   |
 | [Tokey Recycle](https://arxiv.org/abs/2408.08696)             |          1.92x          |    1.61x    |     1.96x      |       1.71x        |         2.16x          |           1.68x           |         2.83          |   1.84x   |
 
+## Data
+
+The test data for SAM-Decoding is available in the Spec-Bench repository. To proceed, you should place the relevant data files `Spec-Bench/data` from the [Spec-Bench](https://github.com/hemingkx/Spec-Bench) repository into the evaluation directory of our project `evaluation/data`.
 
 ## Inference
 
