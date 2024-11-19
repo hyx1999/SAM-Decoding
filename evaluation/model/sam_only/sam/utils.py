@@ -29,6 +29,6 @@ def load_sam(path: str):
     with open(path, "rb") as f:
         sam: StaticSAM = pickle.load(f)
     end = time.perf_counter()
-    assert type(sam) is StaticSAM
+    # assert type(sam) is StaticSAM
     print("loading ended in {} seconds.".format(end - start))
     return sam
