@@ -7,28 +7,31 @@ import torch
 import argparse
 from fastchat.utils import str_to_torch_dtype
 
-from evaluation.eval import run_eval, reorg_answer_file
-
+from evaluation.eval import run_eval_fndict, reorg_answer_file_fndict
 from evaluation.model.eagle2.ea_model import EaModel
-from evaluation.model.eagle2.kv_cache import initialize_past_key_values
-from evaluation.model.eagle2.utils import *
+from functools import partial
 
-
-def ea_forward(inputs, model, tokenizer, max_new_tokens, temperature=0.0):
+def ea_forward(inputs, model, tokenizer, max_new_tokens, temperature=0.0, is_llama3=False):
     input_ids = inputs.input_ids
     assert input_ids.shape[0] == 1, "Only support batch size 1 for now!!"
     input_ids, new_token, step, accept_length_list = model.eagenerate(
         torch.as_tensor(input_ids).cuda(),
         temperature=temperature,
         max_new_tokens=max_new_tokens,
-        log=True
+        log=True,
+        is_llama3=is_llama3,
     )
-
     return input_ids, new_token, step, accept_length_list
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        required=True,
+        choices=["vicuna", "llama3"]
+    )
     parser.add_argument(
         "--ea-model-path",
         type=str,
@@ -112,6 +115,7 @@ if __name__ == "__main__":
         choices=["float32", "float64", "float16", "bfloat16"],
         help="Override the default dtype. If not set, it will use float16 on GPU.",
     )
+    parser.add_argument("--is_llama3", action="store_true")
 
     args = parser.parse_args()
 
@@ -139,8 +143,11 @@ if __name__ == "__main__":
     )
 
     tokenizer = model.get_tokenizer()
+    
+    if args.model_type == "llama3":
+        ea_forward = partial(ea_forward, is_llama3=True)
 
-    run_eval(
+    run_eval_fndict[args.model_type](
         model=model,
         tokenizer=tokenizer,
         forward_func=ea_forward,
@@ -156,4 +163,4 @@ if __name__ == "__main__":
         temperature=args.temperature,
     )
 
-    reorg_answer_file(answer_file)
+    reorg_answer_file_fndict[args.model_type](answer_file)

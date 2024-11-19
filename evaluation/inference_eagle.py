@@ -5,8 +5,8 @@ python3 gen_model_answer.py --model-path lmsys/fastchat-t5-3b-v1.0 --model-id fa
 """
 import argparse
 from fastchat.utils import str_to_torch_dtype
-
-from evaluation.eval import run_eval, reorg_answer_file
+from functools import partial
+from evaluation.eval import run_eval_fndict, reorg_answer_file_fndict
 
 from evaluation.model.eagle.ea_model import EaModel
 from evaluation.model.eagle.kv_cache import initialize_past_key_values
@@ -14,7 +14,12 @@ from evaluation.model.eagle.utils import *
 from evaluation.model.eagle.choices import *
 
 
-def ea_forward(inputs, model, tokenizer, max_new_tokens, tree_choices=None, logits_processor=None, max_steps=512):
+def ea_forward(
+    inputs, model, tokenizer, max_new_tokens, tree_choices=None, logits_processor=None, 
+    max_steps=512, is_llama3=False
+):
+    if is_llama3:
+        stop_token_id = tokenizer.convert_tokens_to_ids("<|eot_id|>")
     input_ids = inputs.input_ids
     assert input_ids.shape[0] == 1, "Only support batch size 1 for now!!"
     # Avoid modifying the input_ids in-place
@@ -107,6 +112,9 @@ def ea_forward(inputs, model, tokenizer, max_new_tokens, tree_choices=None, logi
                 accept_length_list[-1] -= invalid_len
                 new_token -= invalid_len
             break
+        if is_llama3:
+            if stop_token_id in input_ids[0, input_len:].tolist():
+                break
         if new_token > max_new_tokens:
             break
         if input_ids.shape[1] > 1960:
@@ -116,6 +124,12 @@ def ea_forward(inputs, model, tokenizer, max_new_tokens, tree_choices=None, logi
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        required=True,
+        choices=["vicuna", "llama3"]
+    )
     parser.add_argument(
         "--ea-model-path",
         type=str,
@@ -217,8 +231,11 @@ if __name__ == "__main__":
         logits_processor = prepare_logits_processor(temperature=args.temperature)
     else:
         logits_processor = None
+    
+    if args.model_type == "llama3":
+        ea_forward = partial(ea_forward, is_llama3=True)
 
-    run_eval(
+    run_eval_fndict[args.model_type](
         model=model,
         tokenizer=tokenizer,
         forward_func=ea_forward,
@@ -236,4 +253,4 @@ if __name__ == "__main__":
         max_steps=args.max_steps,
     )
 
-    reorg_answer_file(answer_file)
+    reorg_answer_file_fndict[args.model_type](answer_file)

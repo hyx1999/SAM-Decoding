@@ -5,7 +5,7 @@ python3 gen_model_answer.py --model-path lmsys/fastchat-t5-3b-v1.0 --model-id fa
 """
 import argparse
 from fastchat.utils import str_to_torch_dtype
-from evaluation.eval import run_eval, reorg_answer_file
+from evaluation.eval import run_eval_fndict, reorg_answer_file_fndict
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
 from evaluation.model.token_recycle import (
     TokenRecycleConfig, 
@@ -41,6 +41,12 @@ def token_recycle_forward(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        required=True,
+        choices=["vicuna", "llama3"]
+    )
     parser.add_argument(
         "--model-path",
         type=str,
@@ -135,7 +141,7 @@ if __name__ == "__main__":
     else:
         do_sample = False
 
-    run_eval(
+    run_eval_fndict[args.model_type](
         model=token_recycle_model,
         tokenizer=tokenizer,
         forward_func=token_recycle_forward,
@@ -152,4 +158,4 @@ if __name__ == "__main__":
         do_sample=do_sample,
     )
 
-    reorg_answer_file(answer_file)
+    reorg_answer_file_fndict[args.model_type](answer_file)

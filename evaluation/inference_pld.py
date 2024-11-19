@@ -5,7 +5,7 @@ python3 gen_model_answer.py --model-path lmsys/fastchat-t5-3b-v1.0 --model-id fa
 """
 import argparse
 
-from evaluation.eval import run_eval, reorg_answer_file
+from evaluation.eval import run_eval_fndict, reorg_answer_file_fndict
 
 from fastchat.utils import str_to_torch_dtype
 
@@ -41,6 +41,12 @@ def pld_forward(inputs, model, tokenizer, max_new_tokens):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        required=True,
+        choices=["vicuna", "llama3"]
+    )
     parser.add_argument(
         "--model-path",
         type=str,
@@ -116,7 +122,7 @@ if __name__ == "__main__":
 
     model.greedy_search_pld = greedy_search_pld.__get__(model, type(model))
 
-    run_eval(
+    run_eval_fndict[args.model_type](
         model=model,
         tokenizer=tokenizer,
         forward_func=pld_forward,
@@ -131,4 +137,4 @@ if __name__ == "__main__":
         num_gpus_total=args.num_gpus_total,
     )
 
-    reorg_answer_file(answer_file)
+    reorg_answer_file_fndict[args.model_type](answer_file)
