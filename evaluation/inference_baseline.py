@@ -6,7 +6,7 @@ python3 gen_model_answer.py --model-path lmsys/fastchat-t5-3b-v1.0 --model-id fa
 import argparse
 from fastchat.utils import str_to_torch_dtype
 
-from evaluation.eval import run_eval_fndict, reorg_answer_file_fndict
+from evaluation.eval import run_evals, reorg_answer_files
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -27,6 +27,12 @@ def baseline_forward(inputs, model, tokenizer, max_new_tokens, temperature=0.0, 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--template",
+        type=str,
+        default="vicuna",
+        choices=["vicuna", "llama3"]
+    )
     parser.add_argument(
         "--model-type",
         type=str,
@@ -119,7 +125,7 @@ if __name__ == "__main__":
     if args.model_type == "llama3":
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    run_eval_fndict[args.model_type](
+    run_evals[args.template](
         model=model,
         tokenizer=tokenizer,
         forward_func=baseline_forward,
@@ -136,4 +142,4 @@ if __name__ == "__main__":
         do_sample=do_sample,
     )
 
-    reorg_answer_file_fndict[args.model_type](answer_file)
+    reorg_answer_files[args.template](answer_file)

@@ -74,10 +74,10 @@ def get_single_speedup(jsonl_file, jsonl_file_base, tokenizer_path):
         speed(jsonl_file, jsonl_file_base, tokenizer_path, task=subtask_name)
 
 
-def get_mean_speedup():
-    tokenizer_path="/data/models/vicuna-7b-v1.3/"
-    jsonl_file_name = "vicuna-7b-v1.3-lade-level-5-win-7-guess-7-float16.jsonl"
-    jsonl_file_base_name = "vicuna-7b-v1.3-vanilla-float16-temp-0.0.jsonl"
+def get_mean_speedup(args):
+    tokenizer_path=args.tokenizer_path
+    jsonl_file_name = args.file_path
+    jsonl_file_base_name = args.base_path
     jsonl_file_run_list = [
         "evaluation/data/spec_bench/model_answer_temp0_run_1/{}".format(jsonl_file_name),
         "evaluation/data/spec_bench/model_answer_temp0_run_2/{}".format(jsonl_file_name),
@@ -119,7 +119,6 @@ def get_mean_speedup():
         print("\n")
 
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -149,6 +148,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     if args.mean_report:
-        get_mean_speedup()
+        get_mean_speedup(args)
     else:
         get_single_speedup(jsonl_file=args.file_path, jsonl_file_base=args.base_path, tokenizer_path=args.tokenizer_path)

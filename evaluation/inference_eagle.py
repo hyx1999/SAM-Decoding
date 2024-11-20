@@ -6,7 +6,7 @@ python3 gen_model_answer.py --model-path lmsys/fastchat-t5-3b-v1.0 --model-id fa
 import argparse
 from fastchat.utils import str_to_torch_dtype
 from functools import partial
-from evaluation.eval import run_eval_fndict, reorg_answer_file_fndict
+from evaluation.eval import run_evals, reorg_answer_files
 
 from evaluation.model.eagle.ea_model import EaModel
 from evaluation.model.eagle.kv_cache import initialize_past_key_values
@@ -125,6 +125,12 @@ def ea_forward(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--template",
+        type=str,
+        default="vicuna",
+        choices=["vicuna", "llama3"]
+    )
+    parser.add_argument(
         "--model-type",
         type=str,
         required=True,
@@ -235,7 +241,7 @@ if __name__ == "__main__":
     if args.model_type == "llama3":
         ea_forward = partial(ea_forward, is_llama3=True)
 
-    run_eval_fndict[args.model_type](
+    run_evals[args.template](
         model=model,
         tokenizer=tokenizer,
         forward_func=ea_forward,
@@ -253,4 +259,4 @@ if __name__ == "__main__":
         max_steps=args.max_steps,
     )
 
-    reorg_answer_file_fndict[args.model_type](answer_file)
+    reorg_answer_files[args.template](answer_file)

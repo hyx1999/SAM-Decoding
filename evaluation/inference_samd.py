@@ -5,7 +5,7 @@ python3 gen_model_answer.py --model-path lmsys/fastchat-t5-3b-v1.0 --model-id fa
 """
 import argparse
 from fastchat.utils import str_to_torch_dtype
-from evaluation.eval import run_eval_fndict, reorg_answer_file_fndict
+from evaluation.eval import run_evals, reorg_answer_files
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
 from samd import SamdConfig, SamdModel, SamdGenerationConfig, DraftModel, load_sam
 
@@ -35,6 +35,12 @@ def samd_forward(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--template",
+        type=str,
+        default="vicuna",
+        choices=["vicuna", "llama3"]
+    )
     parser.add_argument(
         "--model-type",
         type=str,
@@ -179,7 +185,7 @@ if __name__ == "__main__":
     else:
         do_sample = False
 
-    run_eval_fndict[args.model_type](
+    run_evals[args.template](
         model=samd_model,
         tokenizer=tokenizer,
         forward_func=samd_forward,
@@ -196,4 +202,4 @@ if __name__ == "__main__":
         do_sample=do_sample,
     )
 
-    reorg_answer_file_fndict[args.model_type](answer_file)
+    reorg_answer_files[args.template](answer_file)

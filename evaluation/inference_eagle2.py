@@ -7,7 +7,7 @@ import torch
 import argparse
 from fastchat.utils import str_to_torch_dtype
 
-from evaluation.eval import run_eval_fndict, reorg_answer_file_fndict
+from evaluation.eval import run_evals, reorg_answer_files
 from evaluation.model.eagle2.ea_model import EaModel
 from functools import partial
 
@@ -26,6 +26,12 @@ def ea_forward(inputs, model, tokenizer, max_new_tokens, temperature=0.0, is_lla
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--template",
+        type=str,
+        default="vicuna",
+        choices=["vicuna", "llama3"]
+    )
     parser.add_argument(
         "--model-type",
         type=str,
@@ -147,7 +153,7 @@ if __name__ == "__main__":
     if args.model_type == "llama3":
         ea_forward = partial(ea_forward, is_llama3=True)
 
-    run_eval_fndict[args.model_type](
+    run_evals[args.template](
         model=model,
         tokenizer=tokenizer,
         forward_func=ea_forward,
@@ -163,4 +169,4 @@ if __name__ == "__main__":
         temperature=args.temperature,
     )
 
-    reorg_answer_file_fndict[args.model_type](answer_file)
+    reorg_answer_files[args.template](answer_file)
