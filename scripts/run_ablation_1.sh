@@ -4,7 +4,7 @@ set -x
 
 cd $(dirname $0)/..
 
-devices=1
+devices=0
 
 CUDA_VISIBLE_DEVICES=${devices} \
     python -m evaluation.inference_samd \

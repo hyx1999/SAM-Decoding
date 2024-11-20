@@ -4,7 +4,7 @@ set -x
 
 cd $(dirname $0)/..
 
-devices=3
+devices=0
 
 CUDA_VISIBLE_DEVICES=${devices} \
     python -m evaluation.profile_sam_only \

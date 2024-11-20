@@ -4,7 +4,7 @@ set -x
 
 cd $(dirname $0)/..
 
-devices=2
+devices=0
 
 # vicuna
 CUDA_VISIBLE_DEVICES=${devices} python -m evaluation.inference_eagle \
@@ -16,7 +16,7 @@ CUDA_VISIBLE_DEVICES=${devices} python -m evaluation.inference_eagle \
     --temperature 0 \
     --dtype "float16"
 
-# vicuna
+# llama3
 CUDA_VISIBLE_DEVICES=${devices} python -m evaluation.inference_eagle \
     --model-type llama3 \
     --ea-model-path /home/wangke/models/EAGLE-LLaMA3-Instruct-8B \

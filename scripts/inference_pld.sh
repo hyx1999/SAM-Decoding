@@ -4,7 +4,7 @@ set -x
 
 cd $(dirname $0)/..
 
-devices=3
+devices=0
 
 # vicuna
 CUDA_VISIBLE_DEVICES=${devices} \
