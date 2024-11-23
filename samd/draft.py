@@ -52,7 +52,6 @@ class DraftModel(torch.nn.Module):
 
     @profile_lookup_decorator("lookup")
     def lookup(self, start_token: int):
-        return (CandidateType.tree,) + self.tree_model.lookup(start_token)
         pred_dyn, match_dyn = self.sam_dyn.lookup(start_token)
         pred_static, match_static = self.sam_static.lookup(start_token)
         match_static -= self.len_bias
