@@ -154,6 +154,13 @@ if __name__ == "__main__":
     )
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
+    
+    if args.model_type == "llama3":
+        stop_token_id = tokenizer.convert_tokens_to_ids("<|eot_id|>")
+        assert isinstance(stop_token_id, int)
+        print("stop_token: {}".format(stop_token_id))
+        print("Yes, Warsaw:")
+        print(tokenizer.encode("Yes, Warsaw"))
 
     sam = load_sam(args.sam_path)
     samd_config = SamdConfig(
@@ -169,7 +176,7 @@ if __name__ == "__main__":
         sam_static=sam,
         lm=model,
         dtype=str_to_torch_dtype(args.dtype),
-        device="cuda"
+        device="cuda",
     )
     samd_model = SamdModel(
         samd_config, 
@@ -178,6 +185,7 @@ if __name__ == "__main__":
         tokenizer.eos_token_id,
         str_to_torch_dtype(args.dtype),
         "cuda", 
+        stop_token_id=stop_token_id
     )
 
     if args.temperature > 0:

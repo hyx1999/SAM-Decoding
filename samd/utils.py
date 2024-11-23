@@ -55,7 +55,8 @@ def gen_candidates(
     start_token = torch.argmax(logits[:, -1]).item()
     candidate_type, tokens, buffers_kwargs = draft.lookup(start_token)
     tree_retrieve_indices = buffers_kwargs.get("tree_retrieve_indices", tree_retrieve_indices)
-    if candidate_type == CandidateType.sequence:
+    if candidate_type == CandidateType.sequence_dyn \
+        or candidate_type == CandidateType.sequence_static:
         tokens = torch.tensor([tokens], dtype=torch.long, device=device)
         candidate_tokens = tokens
     else:

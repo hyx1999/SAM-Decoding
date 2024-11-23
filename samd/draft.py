@@ -6,14 +6,16 @@ from collections import namedtuple
 from .samd_config import SamdConfig
 from .sam import DynSAM, StaticSAM
 from .tree_model import TreeModel, tree_model_cls
-from profile_utils import profile_decorator
 from transformers import LlamaConfig, LlamaForCausalLM
+
+from profile_utils import profile_decorator, profile_lookup_decorator
 
 # from transformers import LlamaTokenizer
 # tokenizer: LlamaTokenizer = LlamaTokenizer.from_pretrained('/data/models/vicuna-7b-v1.3')
 
 class CandidateType(str, Enum):
-    sequence = "sequence"
+    sequence_dyn = "sequence_dyn"
+    sequence_static = "sequence_static"
     tree = "tree"
 
 Candidates = namedtuple('Candidates', ['type', 'tokens', 'candidate_tokens', 'buffers_kwargs'])
@@ -48,21 +50,24 @@ class DraftModel(torch.nn.Module):
         self.sam_static.reset()
         self.tree_model.reset()
 
+    @profile_lookup_decorator("lookup")
     def lookup(self, start_token: int):
+        return (CandidateType.tree,) + self.tree_model.lookup(start_token)
         pred_dyn, match_dyn = self.sam_dyn.lookup(start_token)
         pred_static, match_static = self.sam_static.lookup(start_token)
         match_static -= self.len_bias
         if match_dyn >= match_static:
             pred, len = pred_dyn, match_dyn
+            cand_type = CandidateType.sequence_dyn
         else:
             pred, len = pred_static, match_static        
+            cand_type = CandidateType.sequence_static
         if len >= self.len_threshold:
-            return (CandidateType.sequence, [start_token] + pred, {})
+            return (cand_type, [start_token] + pred, {})
         else:
             return (CandidateType.tree,) + self.tree_model.lookup(start_token)
     
-    @profile_decorator("DraftModel.update")
-    def update(self, 
+    def update(self,
         tokens: Optional[torch.Tensor] = None,
         last_hidden_states: Optional[torch.Tensor] = None,
         tree_tokens: Optional[torch.Tensor] = None,

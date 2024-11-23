@@ -18,7 +18,7 @@ from .utils import (
 from .cache import SamdCache, SamdStaticCache
 from .draft import DraftModel
 from .model_patch import patch_dict, attn_patch_dict
-from profile_utils import profile_decorator
+from profile_utils import profile_decorator, profile_accept_length
 
 Outputs = namedtuple('Outputs', ['output_ids', 'decode_tokens', 'decode_steps', 'accepet_length_per_step'])
 
@@ -31,11 +31,13 @@ class SamdModel(nn.Module):
         eos_token_id: int,
         dtype: torch.dtype,
         device: str,
+        stop_token_id: Optional[int] = None,
     ) -> None:
         super().__init__()
         self.samd_config = samd_config
         self.gen_config: SamdGenerationConfig = None
         self.eos_token = eos_token_id
+        self.stop_token = stop_token_id
 
         self.lm = lm
         self.draft = draft
@@ -91,7 +93,8 @@ class SamdModel(nn.Module):
         self.tree_position_ids = buffers_kwargs.get("tree_position_ids", self.tree_position_ids)
         self.tree_retrieve_indices = buffers_kwargs.get("tree_retrieve_indices", self.tree_retrieve_indices)
         self.mask_state.set_state(self.tree_attn_mask)
-        
+    
+    @profile_decorator("SamdModel.prefill")
     def prefill(self, 
         input_ids: torch.Tensor, 
         attention_mask: torch.Tensor,
@@ -128,7 +131,8 @@ class SamdModel(nn.Module):
             self.device
         )
         self.update_buffers(candidates.buffers_kwargs)
-        if candidates.type == CandidateType.sequence:
+        if candidates.type == CandidateType.sequence_dyn \
+            or candidates.type == CandidateType.sequence_static:
             self.forward_state.forward_type = ForwardType.seq_decode
             position_ids = self.seq_position_ids + length
         else:
@@ -146,7 +150,8 @@ class SamdModel(nn.Module):
             tree_last_hidden_states = OptionalTensor(outputs.last_hidden_states)
         else:
             tree_last_hidden_states = OptionalTensor(None)
-        if candidates.type == CandidateType.sequence:
+        if candidates.type == CandidateType.sequence_dyn \
+            or candidates.type == CandidateType.sequence_static:
             candidate_logits = tree_logits
             candidate_last_hidden_states = tree_last_hidden_states
             candidate_indices = OptionalTensor(None)
@@ -229,15 +234,21 @@ class SamdModel(nn.Module):
         decode_steps = 0
         accepet_length_per_step = []
         for step in range(generation_config.max_new_tokens):
+            if input_length + decode_tokens + self.samd_config.n_predicts >= generation_config.max_cache_len:
+                break
             logits, new_ids = self.decode(logits, input_length + decode_tokens)
             eos_index = None
             if self.eos_token in new_ids:
                 eos_index = new_ids.index(self.eos_token)
                 new_ids = new_ids[:eos_index + 1]
+            elif self.stop_token is not None and self.stop_token in new_ids:
+                eos_index = new_ids.index(self.stop_token)
+                new_ids = new_ids[:eos_index + 1]
             input_ids_list.extend(new_ids)
             decode_steps += 1
             decode_tokens += len(new_ids)
             accepet_length_per_step.append(len(new_ids))
+            profile_accept_length("lookup", len(new_ids))
             if eos_index is not None:
                 break
             if decode_tokens >= generation_config.max_new_tokens:
