@@ -13,11 +13,13 @@ from functools import partial
 
 def ea_forward(inputs, model, tokenizer, max_new_tokens, temperature=0.0, is_llama3=False):
     input_ids = inputs.input_ids
+    max_length=model.config.max_position_embeddings
     assert input_ids.shape[0] == 1, "Only support batch size 1 for now!!"
     input_ids, new_token, step, accept_length_list = model.eagenerate(
         torch.as_tensor(input_ids).cuda(),
         temperature=temperature,
         max_new_tokens=max_new_tokens,
+        max_length=max_length,
         log=True,
         is_llama3=is_llama3,
     )
