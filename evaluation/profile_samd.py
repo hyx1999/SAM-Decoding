@@ -21,9 +21,9 @@ from fastchat.utils import str_to_torch_dtype
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
 from samd import SamdConfig, SamdModel, SamdGenerationConfig, DraftModel, load_sam
 from evaluation.profile_entry import run_profile
-from profile_utils import export_result
+from profile_utils import profile_decorator, export_result, export_lookup_result
 
-
+@profile_decorator("samd_forward")
 def samd_forward(
     inputs, 
     model: SamdModel, 
@@ -128,6 +128,11 @@ if __name__ == "__main__":
         type=int,
         default=5
     )
+    parser.add_argument(
+        "--samd_tree_path",
+        type=str,
+        default=None
+    )
     parser.add_argument("--tree_method", type=str, default="eagle2")
     parser.add_argument("--tree_model_path", type=str, default="/data/models/EAGLE-Vicuna-7B-v1.3")
     args = parser.parse_args()
@@ -157,6 +162,7 @@ if __name__ == "__main__":
         tree_model_path=args.tree_model_path,
         len_threshold=args.samd_len_threshold,
         len_bias=args.samd_len_bias,
+        tree_path=args.samd_tree_path,
     )
     draft = DraftModel(
         samd_config, 
@@ -196,4 +202,5 @@ if __name__ == "__main__":
         do_sample=do_sample,
     )
 
-    print(export_result())
+    print(export_result("samd_forward"))
+    print(export_lookup_result())

@@ -162,8 +162,7 @@ def get_model_answers(
 
     enable_decorator(True)
     accept_lengths_tree = []
-    for question in tqdm(questions[:2]):
-        clear_dict()
+    for question in tqdm(questions):
         choices = []
         for i in range(num_choices):
             cur_accept_lengths_tree = []
@@ -234,5 +233,3 @@ def get_model_answers(
             # torch.cuda.empty_cache()
             choices.append({"index": i, "turns": turns, "decoding_steps": steps, "new_tokens": new_tokens, "wall_time": wall_time,
                             "accept_lengths": cur_accept_lengths_tree})
-        print(choices[-1])
-        print(export_result(root_name="SamdModel.generate"))
