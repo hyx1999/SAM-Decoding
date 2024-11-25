@@ -158,9 +158,8 @@ if __name__ == "__main__":
     if args.model_type == "llama3":
         stop_token_id = tokenizer.convert_tokens_to_ids("<|eot_id|>")
         assert isinstance(stop_token_id, int)
-        print("stop_token: {}".format(stop_token_id))
-        print("Yes, Warsaw:")
-        print(tokenizer.encode("Yes, Warsaw"))
+    else:
+        stop_token_id = None
 
     sam = load_sam(args.sam_path)
     samd_config = SamdConfig(
