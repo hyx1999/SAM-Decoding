@@ -24,6 +24,8 @@ def samd_forward(
         generation_config=SamdGenerationConfig(
             max_new_tokens=max_new_tokens,
             max_cache_len=max_cache_len,
+            greedy=not do_sample,
+            temperature=temperature
         ),
     )
     output_ids = outputs.output_ids
