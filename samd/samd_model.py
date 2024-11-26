@@ -118,7 +118,11 @@ class SamdModel(nn.Module):
             tree_logits=logits.squeeze(0)
         )
         self.cache.set_length()
-        return logits[:, -1:]  # [1, 1, D]
+        if self.gen_config.greedy:
+            sample_p = logits[:, -1]
+        else:
+            sample_p = torch.softmax(logits[:, -1], dim=-1)
+        return sample_p  # [1, D]
     
     @profile_decorator("SamdModel.decode")
     def decode(self, logits: torch.Tensor, length: int):
@@ -162,19 +166,19 @@ class SamdModel(nn.Module):
             )
             candidate_indices = OptionalTensor(self.tree_retrieve_indices)
 
-        best_candidate, accept_length = eval_posterior(candidate_logits, candidates.candidate_tokens, self.gen_config)
-        new_logits, new_tokens = self.update_state(
+        best_candidate, accept_length, sample_p \
+            = eval_posterior(candidate_logits, candidates.candidate_tokens, self.gen_config)
+        new_tokens = self.update_state(
             input_ids.squeeze(0),
             tree_logits.squeeze(0),
             best_candidate, 
             accept_length,
-            candidate_logits,
             candidates.candidate_tokens,
             candidate_indices,
             candidate_last_hidden_states,
         )
         # print("new_tokens:\n{}".format(new_tokens))
-        return new_logits, new_tokens
+        return sample_p, new_tokens
 
     @profile_decorator("SamdModel.update_state")
     def update_state(self,
@@ -182,12 +186,10 @@ class SamdModel(nn.Module):
         tree_logits: torch.Tensor,
         best_candidate: torch.Tensor, 
         accept_length: torch.Tensor,
-        candidate_logits: torch.Tensor,
         candiate_tokens: torch.Tensor,
         candidate_indices: OptionalTensor,
         candidate_last_hidden_states: OptionalTensor,
     ):
-        logits = candidate_logits[best_candidate][:accept_length]
         tokens = candiate_tokens[best_candidate][:accept_length]
         
         indices: Optional[torch.Tensor] = candidate_indices.apply(
@@ -205,9 +207,7 @@ class SamdModel(nn.Module):
         )
         self.cache.select_indices(indices, accept_length.item())
         
-        logits = logits[-1].view(1, 1, -1)
-
-        return logits, tokens.tolist()
+        return tokens.tolist()
     
     @torch.inference_mode()
     def generate(self,
@@ -227,7 +227,7 @@ class SamdModel(nn.Module):
         self.draft.reset()
         
         input_ids_list = input_ids.squeeze(0).tolist()
-        logits = self.prefill(input_ids, attention_mask)
+        sample_p = self.prefill(input_ids, attention_mask)
         
         input_length = input_ids.shape[-1]
         decode_tokens = 0
@@ -236,7 +236,7 @@ class SamdModel(nn.Module):
         for step in range(generation_config.max_new_tokens):
             if input_length + decode_tokens + self.samd_config.n_predicts >= generation_config.max_cache_len:
                 break
-            logits, new_ids = self.decode(logits, input_length + decode_tokens)
+            sample_p, new_ids = self.decode(sample_p, input_length + decode_tokens)
             eos_index = None
             if self.eos_token in new_ids:
                 eos_index = new_ids.index(self.eos_token)
