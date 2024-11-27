@@ -120,13 +120,17 @@ if __name__ == "__main__":
         answer_file = f"evaluation/data/{args.bench_name}/model_answer/{args.model_id}.jsonl"
 
     print(f"Output to {answer_file}")
+    
+    if args.num_gpus_total == 1:
+        device_map = "cuda"
+    else:
+        device_map = "auto"
 
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path,
         torch_dtype=str_to_torch_dtype(args.dtype),
         low_cpu_mem_usage=True,
-        device_map="cuda",
-        attn_implementation="eager",
+        device_map=device_map
     )
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)

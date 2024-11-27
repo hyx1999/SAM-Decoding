@@ -4,6 +4,7 @@ Usage:
 python3 gen_model_answer.py --model-path lmsys/fastchat-t5-3b-v1.0 --model-id fastchat-t5-3b-v1.0
 """
 import argparse
+import torch
 from fastchat.utils import str_to_torch_dtype
 from evaluation.eval import run_evals, reorg_answer_files
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
@@ -146,13 +147,17 @@ if __name__ == "__main__":
     
     print("len_bias:", args.samd_len_bias)
     print("len_threshold:", args.samd_len_threshold)
+    
+    if args.num_gpus_total == 1:
+        device_map = "cuda"
+    else:
+        device_map = "auto"
 
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path,
         torch_dtype=str_to_torch_dtype(args.dtype),
         low_cpu_mem_usage=True,
-        device_map="cuda",
-        # attn_implementation="eager",
+        device_map=device_map,
     )
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
@@ -163,6 +168,7 @@ if __name__ == "__main__":
     else:
         stop_token_id = None
 
+    device = next(model.lm_head.parameters()).device
     sam = load_sam(args.sam_path)
     samd_config = SamdConfig(
         n_predicts=args.samd_n_predicts,
@@ -177,7 +183,7 @@ if __name__ == "__main__":
         sam_static=sam,
         lm=model,
         dtype=str_to_torch_dtype(args.dtype),
-        device="cuda",
+        device=device,
     )
     samd_model = SamdModel(
         samd_config, 
@@ -185,7 +191,7 @@ if __name__ == "__main__":
         draft, 
         tokenizer.eos_token_id,
         str_to_torch_dtype(args.dtype),
-        "cuda", 
+        device, 
         stop_token_id=stop_token_id
     )
 
