@@ -125,9 +125,9 @@ class SamdModel(nn.Module):
         return sample_p  # [1, D]
     
     @profile_decorator("SamdModel.decode")
-    def decode(self, logits: torch.Tensor, length: int):
+    def decode(self, sample_p: torch.Tensor, length: int):
         candidates = gen_candidates(
-            logits,
+            sample_p,
             self.tree_retrieve_indices,
             self.draft,
             self.samd_config, 

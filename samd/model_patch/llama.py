@@ -92,7 +92,7 @@ def _update_causal_mask(
     
     # assert hasattr(self, "samd_attn_mask") and hasattr(self, "forward_state")
     if self.forward_state.forward_type == ForwardType.tree_decode:
-        samd_attn_mask: torch.Tensor = self.mask_state.mask
+        samd_attn_mask: torch.Tensor = self.mask_state.mask.to(causal_mask.device)
         causal_mask[:, :, :, cache_position] = causal_mask.min() * (samd_attn_mask == 0)
     # if self.forward_state.forward_type == ForwardType.seq_decode:
     #     # do nothing for seq_decode

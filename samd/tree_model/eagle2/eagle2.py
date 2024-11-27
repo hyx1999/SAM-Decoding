@@ -39,6 +39,7 @@ class Eagle2(TreeModel):
         last_hidden_states: torch.Tensor,
         **kwargs,
     ):
+        tokens = tokens.to(self.device)
         if self.accpet_tokens is None:
             self.accpet_tokens = tokens
         else:

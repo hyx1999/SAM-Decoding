@@ -26,6 +26,7 @@ class SamdCache(DynamicCache):
             select_indices = None
         for data in self.key_cache + self.value_cache:
             if select_indices is not None:
+                select_indices = select_indices.to(data.device)
                 tgt = data.index_select(-2, select_indices)
                 dst = data.narrow(-2, start, accept_length)
                 dst.copy_(tgt)                
