@@ -14,7 +14,7 @@ class SAM:
         length: int
         endpos: int
 
-    def __init__(self, n_predicts: int = 11):
+    def __init__(self, n_predicts: int = 40):
         self.n_predicts = n_predicts
         self.states: List[SAM.SAMState] = [SAM.SAMState(next={}, link=-1, length=0, endpos=0)]
         self.input_ids: List[int] = [-1]

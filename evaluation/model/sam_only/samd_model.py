@@ -82,6 +82,7 @@ class SamdModel(nn.Module):
         self.seq_position_ids = self.init_seq_position_ids()
     
     def update_buffers(self, buffers_kwargs: Dict[str, Optional[torch.Tensor]]):
+        self.seq_position_ids = buffers_kwargs.get("seq_position_ids", self.seq_position_ids)
         self.tree_attn_mask = buffers_kwargs.get("tree_attn_mask", self.tree_attn_mask)
         self.tree_position_ids = buffers_kwargs.get("tree_position_ids", self.tree_position_ids)
         self.tree_retrieve_indices = buffers_kwargs.get("tree_retrieve_indices", self.tree_retrieve_indices)
@@ -115,8 +116,8 @@ class SamdModel(nn.Module):
         )
         self.update_buffers(candidates.buffers_kwargs)
         self.forward_state.forward_type = ForwardType.seq_decode
-        position_ids = self.seq_position_ids + length
         input_ids = candidates.tokens
+        position_ids = (self.seq_position_ids + length)
         outputs = self.lm(
             input_ids=input_ids, 
             position_ids=position_ids,

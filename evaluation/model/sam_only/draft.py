@@ -31,12 +31,12 @@ class DraftModel(torch.nn.Module):
     ) -> None:
         super().__init__()
         self.config = config
+        self.device = device
         self.sam_dyn = sam_dyn if sam_dyn is not None else DynSAM(config.n_predicts)
-        self.sam_static = sam_static
+        self.sam_static = sam_static if sam_static is not None else StaticSAM(config.n_predicts)
         
         self.sam_dyn.n_predicts = config.n_predicts
-        if self.sam_static is not None:
-            self.sam_static.n_predicts = config.n_predicts
+        self.sam_static.n_predicts = config.n_predicts
         self.len_bias = config.len_bias
 
     @profile_decorator("DraftModel.reset")        
@@ -48,17 +48,15 @@ class DraftModel(torch.nn.Module):
     @profile_decorator("DraftModel.lookup")
     def lookup(self, start_token: int):
         pred_dyn, match_dyn = self.sam_dyn.lookup(start_token)
-        if self.sam_static is not None:
-            pred_static, match_static = self.sam_static.lookup(start_token)
-        else:
-            pred_static = []
-            match_static = -1
+        pred_static, match_static = self.sam_static.lookup(start_token)
         match_static -= self.len_bias
         if match_dyn >= match_static:
             pred, len = pred_dyn, match_dyn
         else:
-            pred, len = pred_static, match_static        
-        return (CandidateType.sequence, [start_token] + pred, {})
+            pred, len = pred_static, match_static
+        pred = pred[:int(self.config.alpha * len)]
+        position_ids = torch.arange(0, len(pred) + 1, dtype=torch.long, device=self.device).unsqueeze(0)
+        return (CandidateType.sequence, [start_token] + pred, {"seq_position_ids": position_ids})
     
     @profile_decorator("DraftModel.update")
     def update(self, 
@@ -66,8 +64,7 @@ class DraftModel(torch.nn.Module):
     ):
         tokens_list = tokens.tolist()
         self.sam_dyn.add_tokens(tokens_list)
-        if self.sam_static is not None:
-            self.sam_static.transfer_tokens(tokens_list)
+        self.sam_static.transfer_tokens(tokens_list)
 
     @profile_decorator("DraftModel.prefill_update")
     def prefill_update(self, 

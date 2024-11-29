@@ -8,8 +8,9 @@ from enum import Enum
 
 @dataclass
 class SamdConfig:
-    n_predicts: int = field(default=15)
+    n_predicts: int = field(default=40)
     len_bias: int = field(default=5)
+    alpha: float = field(default=4.0)
 
 
 class ForwardType(str, Enum):
