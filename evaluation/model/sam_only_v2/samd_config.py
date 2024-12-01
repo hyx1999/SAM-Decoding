@@ -8,7 +8,9 @@ from enum import Enum
 
 @dataclass
 class SamdConfig:
-    n_predicts: int = field(default=40)
+    max_predicts: int = field(default=40)
+    alpha: float = field(default=4.0)
+    K: int = field(default=8)
     len_bias: int = field(default=5)
 
 

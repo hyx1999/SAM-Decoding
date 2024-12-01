@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from collections import namedtuple
 from typing import Optional, Union, List, Literal, Tuple, Dict
 from types import MethodType
-from transformers import LlamaForCausalLM, LlamaTokenizer
+from transformers import LlamaForCausalLM
 from .samd_config import SamdConfig, ForwardState, ForwardType, MaskState
 from .utils import (
     OptionalTensor,
@@ -18,11 +18,9 @@ from .utils import (
 from .cache import SamdCache, SamdStaticCache
 from .draft import DraftModel
 from .model_patch import patch_dict, attn_patch_dict
-from profile_utils import profile_decorator
+from profile_utils import profile_decorator, profile_accept_length
 
 Outputs = namedtuple('Outputs', ['output_ids', 'decode_tokens', 'decode_steps', 'accepet_length_per_step'])
-
-# tokenizer: LlamaTokenizer = LlamaTokenizer.from_pretrained("/data/models/vicuna-7b-v1.3")
 
 class SamdModel(nn.Module):
     
@@ -33,11 +31,13 @@ class SamdModel(nn.Module):
         eos_token_id: int,
         dtype: torch.dtype,
         device: str,
+        stop_token_id: Optional[int] = None,
     ) -> None:
         super().__init__()
         self.samd_config = samd_config
         self.gen_config: SamdGenerationConfig = None
         self.eos_token = eos_token_id
+        self.stop_token = stop_token_id
 
         self.lm = lm
         self.draft = draft
@@ -45,6 +45,10 @@ class SamdModel(nn.Module):
         self.device = device
         
         # buffers
+        self.base_seq_position_ids: torch.Tensor = None
+        self.base_tree_attn_mask: torch.Tensor = None
+        self.base_tree_position_ids: torch.Tensor = None
+        self.base_tree_retrieve_indices: torch.Tensor = None
         self.seq_position_ids: torch.Tensor = None
         self.tree_attn_mask: torch.Tensor = None
         self.tree_position_ids: torch.Tensor = None
@@ -72,25 +76,25 @@ class SamdModel(nn.Module):
                     setattr(module, "forward_state", self.forward_state)
                     print("attn setattr {} -> {}".format(module_name, fn_name))
 
-    
     def init_seq_position_ids(self):
         return torch.tensor(
-            range(0, self.samd_config.n_predicts + 1), 
+            range(0, self.samd_config.max_predicts), 
             dtype=torch.long,
             device=self.device
         ).unsqueeze(0)
     
     def init_buffers(self):
-        self.seq_position_ids = self.init_seq_position_ids()
+        self.base_seq_position_ids = self.init_seq_position_ids()
     
     def update_buffers(self, buffers_kwargs: Dict[str, Optional[torch.Tensor]]):
-        self.tree_attn_mask = buffers_kwargs.get("tree_attn_mask", self.tree_attn_mask)
-        self.tree_position_ids = buffers_kwargs.get("tree_position_ids", self.tree_position_ids)
-        self.tree_retrieve_indices = buffers_kwargs.get("tree_retrieve_indices", self.tree_retrieve_indices)
+        self.seq_position_ids = buffers_kwargs.get("seq_position_ids", self.base_seq_position_ids)
+        self.tree_attn_mask = buffers_kwargs.get("tree_attn_mask", self.base_tree_attn_mask)
+        self.tree_position_ids = buffers_kwargs.get("tree_position_ids", self.base_tree_position_ids)
+        self.tree_retrieve_indices = buffers_kwargs.get("tree_retrieve_indices", self.base_tree_retrieve_indices)
         self.mask_state.set_state(self.tree_attn_mask)
     
     @profile_decorator("SamdModel.prefill")
-    def prefill(self, 
+    def prefill(self,
         input_ids: torch.Tensor, 
         attention_mask: torch.Tensor,
     ):
@@ -101,24 +105,31 @@ class SamdModel(nn.Module):
             past_key_values=self.cache,
         )
         logits = outputs.logits
-        self.draft.prefill_update(tokens=input_ids.squeeze(0))
+        self.draft.update(tokens=input_ids.squeeze(0))
         self.cache.set_length()
-        return logits[:, -1:]  # [1, 1, D]
+        if self.gen_config.greedy:
+            sample_p = logits[:, -1]
+        else:
+            sample_p = torch.softmax(logits[:, -1], dim=-1)
+        return sample_p  # [1, D]
     
     @profile_decorator("SamdModel.decode")
-    def decode(self, logits: torch.Tensor, length: int):
+    def decode(self, sample_p: torch.Tensor, length: int):
         candidates = gen_candidates(
-            logits,
-            self.tree_retrieve_indices,
+            sample_p,
+            self.base_tree_retrieve_indices,
             self.draft,
             self.samd_config, 
             self.gen_config, 
             self.device
         )
-        # print(candidates.candidate_tokens)
         self.update_buffers(candidates.buffers_kwargs)
-        self.forward_state.forward_type = ForwardType.tree_decode
-        position_ids = self.tree_position_ids + length
+        if candidates.type == CandidateType.sequence:
+            self.forward_state.forward_type = ForwardType.seq_decode
+            position_ids = self.seq_position_ids + length
+        else:
+            self.forward_state.forward_type = ForwardType.tree_decode
+            position_ids = self.tree_position_ids + length
         input_ids = candidates.tokens
         outputs = self.lm(
             input_ids=input_ids, 
@@ -126,41 +137,43 @@ class SamdModel(nn.Module):
             past_key_values=self.cache,
         )
         tree_logits = outputs.logits
-        candidate_logits = tree_logits.squeeze(0)[self.tree_retrieve_indices]
-        candidate_indices = self.tree_retrieve_indices
-        best_candidate, accept_length = eval_posterior(candidate_logits, candidates.candidate_tokens, self.gen_config)
-        new_logits, new_tokens = self.update_state(
+        if candidates.type == CandidateType.sequence:
+            candidate_logits = tree_logits
+            candidate_indices = OptionalTensor(None)
+        else:
+            candidate_logits = tree_logits.squeeze(0)[self.tree_retrieve_indices]
+            candidate_indices = OptionalTensor(self.tree_retrieve_indices)
+
+        best_candidate, accept_length, sample_p \
+            = eval_posterior(candidate_logits, candidates.candidate_tokens, self.gen_config)
+        new_tokens = self.update_state(
             best_candidate, 
             accept_length,
-            candidate_logits,
             candidates.candidate_tokens,
             candidate_indices,
         )
-        # print("new_tokens: {}".format(new_tokens))
-        # print("text: {}".format(tokenizer.decode(new_tokens)))
-        return new_logits, new_tokens
+        # print("new_tokens:\n{}".format(new_tokens))
+        return sample_p, new_tokens
 
     @profile_decorator("SamdModel.update_state")
     def update_state(self,
         best_candidate: torch.Tensor, 
         accept_length: torch.Tensor,
-        candidate_logits: torch.Tensor,
         candiate_tokens: torch.Tensor,
-        candidate_indices: torch.Tensor,
+        candidate_indices: OptionalTensor,
     ):
-        logits = candidate_logits[best_candidate][:accept_length]
         tokens = candiate_tokens[best_candidate][:accept_length]
-        indices = candidate_indices[best_candidate][:accept_length]
-
+        
+        indices: Optional[torch.Tensor] = candidate_indices.apply(
+            lambda x: x[best_candidate][:accept_length]
+        ).data
+        
         self.draft.update(tokens=tokens)
         self.cache.select_indices(indices, accept_length.item())
         
-        logits = logits[-1].view(1, 1, -1)
-
-        return logits, tokens.tolist()
+        return tokens.tolist()
     
     @torch.inference_mode()
-    @profile_decorator("SamdModel.generate")
     def generate(self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor = None,
@@ -178,24 +191,28 @@ class SamdModel(nn.Module):
         self.draft.reset()
         
         input_ids_list = input_ids.squeeze(0).tolist()
-        logits = self.prefill(input_ids, attention_mask)
-        
-        # print("input_ids:\n{}".format(input_ids_list))
+        sample_p = self.prefill(input_ids, attention_mask)
         
         input_length = input_ids.shape[-1]
         decode_tokens = 0
         decode_steps = 0
         accepet_length_per_step = []
         for step in range(generation_config.max_new_tokens):
-            logits, new_ids = self.decode(logits, input_length + decode_tokens)
+            if input_length + decode_tokens + self.samd_config.max_predicts >= generation_config.max_cache_len:
+                break
+            sample_p, new_ids = self.decode(sample_p, input_length + decode_tokens)
             eos_index = None
             if self.eos_token in new_ids:
                 eos_index = new_ids.index(self.eos_token)
+                new_ids = new_ids[:eos_index + 1]
+            elif self.stop_token is not None and self.stop_token in new_ids:
+                eos_index = new_ids.index(self.stop_token)
                 new_ids = new_ids[:eos_index + 1]
             input_ids_list.extend(new_ids)
             decode_steps += 1
             decode_tokens += len(new_ids)
             accepet_length_per_step.append(len(new_ids))
+            profile_accept_length("lookup", len(new_ids))
             if eos_index is not None:
                 break
             if decode_tokens >= generation_config.max_new_tokens:

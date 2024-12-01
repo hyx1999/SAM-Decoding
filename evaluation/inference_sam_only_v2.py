@@ -110,9 +110,14 @@ if __name__ == "__main__":
         default=None
     )
     parser.add_argument(
-        "--samd_n_predicts",
+        "--samd_max_predicts",
         type=int,
-        default=15
+        default=40
+    )
+    parser.add_argument(
+        "--samd_alpha",
+        type=float,
+        default=4.0
     )
     parser.add_argument(
         "--samd_len_bias",
@@ -143,7 +148,8 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
 
     samd_config = SamdConfig(
-        n_predicts=args.samd_n_predicts,
+        max_predicts=args.samd_max_predicts,
+        alpha=args.samd_alpha,
         len_bias=args.samd_len_bias,
     )
     if args.sam_path is not None:

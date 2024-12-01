@@ -146,7 +146,7 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
 
     samd_config = SamdConfig(
-        n_predicts=args.samd_n_predicts,
+        max_predicts=args.samd_n_predicts,
         len_bias=args.samd_len_bias,
     )
     if args.sam_path is not None:

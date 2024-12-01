@@ -73,7 +73,7 @@ class SamdModel(nn.Module):
     
     def init_seq_position_ids(self):
         return torch.tensor(
-            range(0, self.samd_config.n_predicts + 1), 
+            range(0, self.samd_config.max_predicts + 1), 
             dtype=torch.long,
             device=self.device
         ).unsqueeze(0)

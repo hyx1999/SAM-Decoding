@@ -32,11 +32,11 @@ class DraftModel(torch.nn.Module):
         super().__init__()
         self.config = config
         self.device = device
-        self.sam_dyn = sam_dyn if sam_dyn is not None else DynSAM(config.n_predicts)
-        self.sam_static = sam_static if sam_static is not None else StaticSAM(config.n_predicts)
+        self.sam_dyn = sam_dyn if sam_dyn is not None else DynSAM(config.max_predicts)
+        self.sam_static = sam_static if sam_static is not None else StaticSAM(config.max_predicts)
         
-        self.sam_dyn.n_predicts = config.n_predicts
-        self.sam_static.n_predicts = config.n_predicts
+        self.sam_dyn.max_predicts = config.max_predicts
+        self.sam_static.max_predicts = config.max_predicts
         self.len_bias = config.len_bias
 
     @profile_decorator("DraftModel.reset")        

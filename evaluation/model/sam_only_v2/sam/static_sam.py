@@ -16,44 +16,60 @@ class SearchItem:
     token: int = field(compare=False)
     index: int = field(compare=False)
     anc_tree_index: int = field(compare=False)
+    depth: int = field(compare=False)
 
-class SAM:
+
+class StaticSAM:
    
     @dataclass
     class SAMState:
         next: dict[int, int]
         link: int
         length: int
-        min_endpos: int
         cnt_endpos: int
 
-    def __init__(self, n_predicts: int = 40):
-        self.alpha = 4.0
-        self.max_predicts = n_predicts
-        self.states: List[SAM.SAMState] = [SAM.SAMState(next={}, link=-1, length=0, min_endpos=0, cnt_endpos=0)]
-        self.input_ids: List[int] = [-1]
+    @staticmethod
+    def build(
+        batch_tokens: List[List[int]], 
+        eos_token: int,
+        verbose: bool =True
+    ):
+        sam = StaticSAM()
+        sam.add_batch_tokens(batch_tokens, eos_token, verbose)
+        sam.init_topk_next()
+        return sam
+
+    def __init__(self, 
+        max_predicts: int = 40, 
+        alpha: float = 4.0, 
+        K: int = 8,
+        device: str = "cuda"
+    ):
+        self.states: List[StaticSAM.SAMState] = [StaticSAM.SAMState(next={}, link=-1, length=0, cnt_endpos=0)]
+        self.states_topk_next = None
         self.last = 0
         self.max_length = 0
-        
+
+        self.max_predicts = max_predicts
+        self.alpha = alpha
+        self.device = device
+        self.K = K
+
         # params needed to be reset for each query
         self.cur_index = 0
         self.cur_length = 0
-    
-    def reset(self):
-        raise NotImplementedError
-    
+        
     def expand_state(self, state: SAMState):
         new_index = len(self.states)
         self.states.append(state)
         return new_index
-
+    
     def add_state(self, token: int):
         self.max_length += 1
         cur = self.expand_state(
-            SAM.SAMState(
+            StaticSAM.SAMState(
                 next={}, link=-1, 
                 length=self.max_length, 
-                min_endpos=self.max_length,
                 cnt_endpos=0,
             )
         )
@@ -78,7 +94,7 @@ class SAM:
         while cur != 0:
             self.states[cur].cnt_endpos += 1
             cur = self.states[cur].link
-           
+
     def transfer_state(self, index: int, length: int, token: int):
         while index != 0 and token not in self.states[index].next:
             index = self.states[index].link
@@ -94,17 +110,10 @@ class SAM:
         self.cur_index, self.cur_length = \
             self.transfer_state(self.cur_index, self.cur_length, token)
     
-    def to_anc(self, index: int, length: int):
-        if index != 0 and index == self.last:
-            index = self.states[index].link
-            length = self.states[index].length
-        return index, length
-    
     def add_tokens(self, tokens: List[int]):
         for token in tokens:
             self.transfer_cur_state(token)
             self.add_state(token)
-        self.input_ids.extend(tokens)
     
     def transfer_tokens(self, tokens: List[int]):
         for token in tokens:
@@ -114,82 +123,6 @@ class SAM:
         index, length = \
             self.transfer_state(self.cur_index, self.cur_length, token)
         return index, length
-
-    def gen_buffers(self, anc_tree: List[int], device: str):
-        n = len(anc_tree)
-        is_leaf = [True] * n
-        tree_position_ids = [0] * n
-        for i in range(1, n):
-            is_leaf[anc_tree[i]] = False
-            tree_position_ids[i] = tree_position_ids[anc_tree[i]] + 1
-        tree_position_ids = torch.tensor([tree_position_ids], dtype=torch.long, device=device)
-        
-        tree_attn_mask = torch.zeros((n, n), dtype=torch.bool)
-        for i in range(n):
-            j = i
-            while j != -1:
-                tree_attn_mask[i, j] = True
-                j = anc_tree[j]
-        tree_attn_mask = tree_attn_mask.view(1, 1, n, n).to(device)
-        
-        retrieve_indices_nest = []
-        for i in range(n):
-            if not is_leaf[i]:
-                continue
-            retrieve_indices = [i]
-            while retrieve_indices[-1] != 0:
-                retrieve_indices.append(anc_tree[retrieve_indices[-1]])
-            retrieve_indices_nest.append(list(reversed(retrieve_indices)))
-        max_depth = max(len(x) for x in retrieve_indices_nest)
-        retrieve_indices_nest = [pad_path(x, max_depth) for x in retrieve_indices_nest]
-        tree_retrieve_indices = torch.tensor(retrieve_indices_nest, dtype=torch.long, device=device)
-        return {
-            "tree_attn_mask": tree_attn_mask,
-            "tree_position_ids": tree_position_ids,
-            "tree_retrieve_indices": tree_retrieve_indices,
-        }
-    
-    def gen_draft(self, index: int, match_length: int, start_token: int, device: str):
-        n = min(self.max_predicts, 1 + int(match_length * self.alpha))
-        h = []
-        tree = []
-        anc_tree = []
-        heapq.heappush(h, SearchItem(prob=-1.0, token=start_token, index=index, anc_tree_index=-1))
-        while len(tree) != n and len(h) != 0:
-            item: SearchItem = heapq.heappop(h)
-            cur_tree_index = len(tree)
-            tree.append(item.token)
-            anc_tree.append(item.anc_tree_index)
-            if len(tree) == n:
-                break
-            cnt_sum = self.states[item.index].cnt_endpos
-            for n_token, n_index in self.states[item.index].next.items():
-                n_prob = self.states[n_index].cnt_endpos / cnt_sum
-                heapq.heappush(
-                    h, 
-                    SearchItem(
-                        prob=item.prob * n_prob,
-                        token=n_token,
-                        index=n_index,
-                        anc_tree_index=cur_tree_index
-                    )
-                )
-        return tree, self.gen_buffers(anc_tree, device)
-
-
-class DynSAM(SAM):
-        
-    def reset(self):
-        self.states: List[SAM.SAMState] = \
-            [SAM.SAMState(next={}, link=-1, length=0, min_endpos=0, cnt_endpos=0)]
-        self.input_ids: List[int] = [-1]
-        self.last = 0
-        self.max_length = 0
-        self.cur_index = 0
-        self.cur_length = 0
-
-
-class StaticSAM(SAM):
 
     def reset(self):
         self.cur_index = 0
@@ -201,13 +134,96 @@ class StaticSAM(SAM):
             if tokens[-1] != eos_token:
                 self.add_tokens([eos_token])
 
-    @staticmethod
-    def build(
-        batch_tokens: List[List[int]], 
-        eos_token: int,
-        n_predict: int,
-        verbose: bool =True
-    ):
-        sam = StaticSAM(n_predict)
-        sam.add_batch_tokens(batch_tokens, eos_token, verbose)
-        return sam
+    def init_topk_next(self, k: int = 8):
+        self.states_topk_next = [None] * len(self.states)
+        for index in tqdm(range(len(self.states)), "init top-k next"):            
+            all_next = list(self.states[index].next.items())
+            topk_next = sorted(
+                all_next,
+                key=lambda item: self.states[item[1]].cnt_endpos,
+                reverse=True
+            )[:k]
+            self.states_topk_next[index] = topk_next
+
+    def gen_buffers(self, anc_tree: List[int]):
+        n = len(anc_tree)
+        is_leaf = [True] * n
+        tree_position_ids = [0] * n
+        for i in range(1, n):
+            is_leaf[anc_tree[i]] = False
+            tree_position_ids[i] = tree_position_ids[anc_tree[i]] + 1
+        tree_position_ids = torch.tensor([tree_position_ids], dtype=torch.long, device=self.device)
+        
+        tree_attn_mask = torch.zeros((n, n), dtype=torch.bool)
+        for i in range(n):
+            j = i
+            while j != -1:
+                tree_attn_mask[i, j] = True
+                j = anc_tree[j]
+        tree_attn_mask = tree_attn_mask.view(1, 1, n, n).to(self.device)
+        
+        retrieve_indices_nest = []
+        for i in range(n):
+            if not is_leaf[i]:
+                continue
+            retrieve_indices = [i]
+            while retrieve_indices[-1] != 0:
+                retrieve_indices.append(anc_tree[retrieve_indices[-1]])
+            retrieve_indices_nest.append(list(reversed(retrieve_indices)))
+        max_depth = max(len(x) for x in retrieve_indices_nest)
+        retrieve_indices_nest = [pad_path(x, max_depth) for x in retrieve_indices_nest]
+        tree_retrieve_indices = torch.tensor(retrieve_indices_nest, dtype=torch.long, device=self.device)
+        return {
+            "tree_attn_mask": tree_attn_mask,
+            "tree_position_ids": tree_position_ids,
+            "tree_retrieve_indices": tree_retrieve_indices,
+        }
+    
+    def gen_draft(self, index: int, match_length: int, start_token: int):
+        n = min(self.max_predicts, 1 + int(match_length * self.alpha))
+        h = []
+        tree = []
+        anc_tree = []
+        dep_cnt = {}
+        heapq.heappush(h, SearchItem(prob=-1.0, token=start_token, index=index, anc_tree_index=-1, depth=0))
+        while len(tree) != n and len(h) != 0:
+            item: SearchItem = heapq.heappop(h)
+            if item.depth not in dep_cnt:
+                dep_cnt[item.depth] = 0
+            if dep_cnt[item.depth] + 1 > self.K:
+                continue
+            dep_cnt[item.depth] += 1
+            cur_tree_index = len(tree)
+            tree.append(item.token)
+            anc_tree.append(item.anc_tree_index)
+            if len(tree) == n:
+                break
+            cnt_sum = self.states[item.index].cnt_endpos
+            next_states = self.states_topk_next[item.index][:self.K]
+            for n_token, n_index in next_states:
+                n_prob = self.states[n_index].cnt_endpos / cnt_sum
+                heapq.heappush(
+                    h, 
+                    SearchItem(
+                        prob=item.prob * n_prob,
+                        token=n_token,
+                        index=n_index,
+                        anc_tree_index=cur_tree_index,
+                        depth=item.depth + 1
+                    )
+                )
+        return tree, self.gen_buffers(anc_tree)
+
+    # def gen_draft(self, index: int, match_length: int, start_token: int):
+    #     n = min(self.max_predicts, 1 + int(match_length * self.alpha))
+    #     seq_index = [index]
+    #     seq = [start_token]
+    #     while len(seq) != n:
+    #         index = seq_index[-1]
+    #         if len(self.states_topk_next[index]) == 0:
+    #             break
+    #         n_token, n_index = self.states_topk_next[index][0]
+    #         seq_index.append(n_index)
+    #         seq.append(n_token)
+    #     seq_position_ids = torch.arange(0, len(seq), dtype=torch.long, device=self.device).unsqueeze(0)
+    #     return seq, {"seq_position_ids": seq_position_ids}

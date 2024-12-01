@@ -4,18 +4,16 @@ from datasets import Dataset
 from transformers import PreTrainedTokenizerFast
 from typing import List
 
-from .sam import StaticSAM
+from .static_sam import StaticSAM
 from ..samd_config import SamdConfig
 
 def build_sam(
-    config: SamdConfig,
     batch_tokens: List[List[int]],
     eos_token: int,
 ):
     sam = StaticSAM.build(
         batch_tokens, 
-        eos_token, 
-        config.n_predicts
+        eos_token,
     )
     return sam
 
@@ -27,8 +25,15 @@ def load_sam(path: str):
     print("load sam...")
     start = time.perf_counter()
     with open(path, "rb") as f:
-        sam: StaticSAM = pickle.load(f)
+        _sam = pickle.load(f)
+    sam = StaticSAM()
+    for key, value in vars(_sam).items():
+        if hasattr(sam, key):
+            setattr(sam, key, value)
+            print("load [{}]".format(key))
     end = time.perf_counter()
-    # assert type(sam) is StaticSAM
+    assert type(sam) is StaticSAM
     print("loading ended in {} seconds.".format(end - start))
+    if sam.states_topk_next is None:
+        sam.init_topk_next()
     return sam

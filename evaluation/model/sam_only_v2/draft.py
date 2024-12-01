@@ -31,11 +31,13 @@ class DraftModel(torch.nn.Module):
     ) -> None:
         super().__init__()
         self.config = config
-        self.device = device
-        self.sam_dyn = sam_dyn if sam_dyn is not None else DynSAM(config.n_predicts)
-        self.sam_static = sam_static if sam_static is not None else StaticSAM(config.n_predicts)        
-        self.sam_dyn.max_predicts = config.n_predicts
-        self.sam_static.max_predicts = config.n_predicts
+        self.sam_dyn = sam_dyn if sam_dyn is not None else DynSAM(config.max_predicts, config.alpha, device)
+        self.sam_static = sam_static if sam_static is not None else StaticSAM(config.max_predicts, config.alpha, device)
+        self.sam_dyn.max_predicts = config.max_predicts
+        self.sam_dyn.alpha = config.alpha
+        self.sam_static.max_predicts = config.max_predicts
+        self.sam_static.alpha = config.alpha
+        self.sam_static.K = config.K
         self.len_bias = config.len_bias
 
     @profile_decorator("DraftModel.reset")        
@@ -49,13 +51,14 @@ class DraftModel(torch.nn.Module):
         index_static, match_static = self.sam_static.lookup(start_token)
         match_static -= self.len_bias
         if match_dyn >= match_static:
-            tree, buffers_kwargs = self.sam_dyn.gen_draft(index_dyn, match_dyn, start_token, self.device)
+            seq, buffers_kwargs = self.sam_dyn.gen_draft(index_dyn, match_dyn, start_token)
+            return (CandidateType.sequence, seq, buffers_kwargs)
         else:
-            tree, buffers_kwargs = self.sam_static.gen_draft(index_static, match_static, start_token, self.device)
-        return (CandidateType.tree, tree, buffers_kwargs)
+            tree, buffers_kwargs = self.sam_static.gen_draft(index_static, match_static, start_token)
+            return (CandidateType.tree, tree, buffers_kwargs)
     
     @profile_decorator("DraftModel.update")
-    def update(self, 
+    def update(self,
         tokens: Optional[torch.Tensor] = None,
     ):
         tokens_list = tokens.tolist()
