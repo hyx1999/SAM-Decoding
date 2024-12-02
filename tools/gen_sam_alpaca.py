@@ -9,7 +9,7 @@ parser.add_argument('--model_name', type=str, default='/data/models/vicuna-7b-v1
 parser.add_argument('--sam_data_path', type=str, default='sam_data/sam_dialogues')
 parser.add_argument('--cutoff_len', type=int, default=2048)
 parser.add_argument('--n_predicts', type=int, default=10)
-parser.add_argument('--sam_path', type=str, default="local_cache/sam_alpaca.pkl")
+parser.add_argument('--sam_path', type=str, default="local_cache/sam_alpaca_min-endpos_vicuna-7b-v1.3.pkl")
 args = parser.parse_args()
 
 sam_data = load_from_disk(args.sam_data_path)
