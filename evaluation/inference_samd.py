@@ -110,12 +110,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--samd_n_predicts",
         type=int,
-        default=15
+        default=40
     )
     parser.add_argument(
         "--sam_path",
         type=str,
-        default="local_cache/sam_mini.pkl"
+        default=None
     )
     parser.add_argument(
         "--samd_len_threshold",
@@ -169,7 +169,7 @@ if __name__ == "__main__":
         stop_token_id = None
 
     device = next(model.lm_head.parameters()).device
-    sam = load_sam(args.sam_path)
+    sam = load_sam(args.sam_path) if args.sam_path is not None else None
     samd_config = SamdConfig(
         n_predicts=args.samd_n_predicts,
         tree_method=args.tree_method,

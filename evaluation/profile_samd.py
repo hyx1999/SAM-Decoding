@@ -111,7 +111,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--samd_n_predicts",
         type=int,
-        default=15
+        default=40
     )
     parser.add_argument(
         "--sam_path",
