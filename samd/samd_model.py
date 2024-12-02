@@ -46,6 +46,9 @@ class SamdModel(nn.Module):
         
         # buffers
         self.seq_position_ids: torch.Tensor = None
+        self.base_tree_attn_mask: torch.Tensor = None
+        self.base_tree_position_ids: torch.Tensor = None
+        self.base_tree_retrieve_indices: torch.Tensor = None
         self.tree_attn_mask: torch.Tensor = None
         self.tree_position_ids: torch.Tensor = None
         self.tree_retrieve_indices: torch.Tensor = None
@@ -75,7 +78,7 @@ class SamdModel(nn.Module):
     
     def init_seq_position_ids(self):
         return torch.tensor(
-            range(0, self.samd_config.n_predicts + 1), 
+            range(0, self.samd_config.n_predicts), 
             dtype=torch.long,
             device=self.device
         ).unsqueeze(0)
@@ -83,15 +86,15 @@ class SamdModel(nn.Module):
     def init_buffers(self):
         self.seq_position_ids = self.init_seq_position_ids()
         buffers = self.draft.tree_model.gen_buffers()
-        self.tree_attn_mask = buffers["tree_attn_mask"]
-        self.tree_position_ids = buffers["tree_position_ids"]
-        self.tree_retrieve_indices = buffers["tree_retrieve_indices"]
-        self.mask_state.set_state(self.tree_attn_mask)
+        self.base_tree_attn_mask = buffers["tree_attn_mask"]
+        self.base_tree_position_ids = buffers["tree_position_ids"]
+        self.base_tree_retrieve_indices = buffers["tree_retrieve_indices"]
+        self.mask_state.set_state(self.base_tree_attn_mask)
     
     def update_buffers(self, buffers_kwargs: Dict[str, Optional[torch.Tensor]]):
-        self.tree_attn_mask = buffers_kwargs.get("tree_attn_mask", self.tree_attn_mask)
-        self.tree_position_ids = buffers_kwargs.get("tree_position_ids", self.tree_position_ids)
-        self.tree_retrieve_indices = buffers_kwargs.get("tree_retrieve_indices", self.tree_retrieve_indices)
+        self.tree_attn_mask = buffers_kwargs.get("tree_attn_mask", self.base_tree_attn_mask)
+        self.tree_position_ids = buffers_kwargs.get("tree_position_ids", self.base_tree_position_ids)
+        self.tree_retrieve_indices = buffers_kwargs.get("tree_retrieve_indices", self.base_tree_retrieve_indices)
         self.mask_state.set_state(self.tree_attn_mask)
     
     @profile_decorator("SamdModel.prefill")
@@ -128,15 +131,14 @@ class SamdModel(nn.Module):
     def decode(self, sample_p: torch.Tensor, length: int):
         candidates = gen_candidates(
             sample_p,
-            self.tree_retrieve_indices,
+            self.base_tree_retrieve_indices,
             self.draft,
             self.samd_config, 
             self.gen_config, 
             self.device
         )
         self.update_buffers(candidates.buffers_kwargs)
-        if candidates.type == CandidateType.sequence_dyn \
-            or candidates.type == CandidateType.sequence_static:
+        if candidates.type == CandidateType.sequence:
             self.forward_state.forward_type = ForwardType.seq_decode
             position_ids = self.seq_position_ids + length
         else:
@@ -154,8 +156,7 @@ class SamdModel(nn.Module):
             tree_last_hidden_states = OptionalTensor(outputs.last_hidden_states)
         else:
             tree_last_hidden_states = OptionalTensor(None)
-        if candidates.type == CandidateType.sequence_dyn \
-            or candidates.type == CandidateType.sequence_static:
+        if candidates.type == CandidateType.sequence:
             candidate_logits = tree_logits
             candidate_last_hidden_states = tree_last_hidden_states
             candidate_indices = OptionalTensor(None)

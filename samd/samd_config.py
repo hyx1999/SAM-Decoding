@@ -8,7 +8,7 @@ from enum import Enum
 
 @dataclass
 class SamdConfig:
-    n_predicts: int = field(default=15)
+    n_predicts: int = field(default=40)
     len_threshold: int = field(default=5)
     len_bias: int = field(default=5)
 

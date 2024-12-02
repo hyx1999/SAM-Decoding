@@ -23,7 +23,7 @@ class TreeModel(torch.nn.Module):
     def update(self, tokens: List[int], topk_nest: List[List[int]]):
         raise NotImplementedError
     
-    def lookup(self, start_token: int) -> Tuple[List[int], Dict[str, torch.Tensor]]:
+    def gen_draft(self, start_token: int) -> Tuple[List[int], Dict[str, torch.Tensor]]:
         raise NotImplementedError
 
     def gen_buffers(self):

@@ -53,7 +53,7 @@ class Eagle(TreeModel):
         else:
             self.accept_hidden_states = torch.cat([self.accept_hidden_states, last_hidden_states], dim=-2)
     
-    def lookup(self, start_token: int) -> List[int]:
+    def gen_draft(self, start_token: int) -> List[int]:
         start_token = torch.tensor([start_token], dtype=torch.long, device=self.device)
         accpet_tokens = torch.cat((self.accpet_tokens, start_token), dim=-1)
         accept_hidden_states = self.accept_hidden_states

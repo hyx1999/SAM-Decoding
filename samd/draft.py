@@ -14,8 +14,7 @@ from profile_utils import profile_decorator, profile_lookup_decorator
 # tokenizer: LlamaTokenizer = LlamaTokenizer.from_pretrained('/data/models/vicuna-7b-v1.3')
 
 class CandidateType(str, Enum):
-    sequence_dyn = "sequence_dyn"
-    sequence_static = "sequence_static"
+    sequence = "sequence"
     tree = "tree"
 
 Candidates = namedtuple('Candidates', ['type', 'tokens', 'candidate_tokens', 'buffers_kwargs'])
@@ -52,19 +51,17 @@ class DraftModel(torch.nn.Module):
 
     @profile_lookup_decorator("lookup")
     def lookup(self, start_token: int):
-        pred_dyn, match_dyn = self.sam_dyn.lookup(start_token)
-        pred_static, match_static = self.sam_static.lookup(start_token)
+        index_dyn, match_dyn = self.sam_dyn.lookup(start_token)
+        index_static, match_static = self.sam_static.lookup(start_token)
         match_static -= self.len_bias
-        if match_dyn >= match_static:
-            pred, len = pred_dyn, match_dyn
-            cand_type = CandidateType.sequence_dyn
+        if max(match_dyn, match_static) >= self.len_threshold:
+            if match_dyn >= match_static:
+                seq = self.sam_dyn.gen_draft(index_dyn, start_token)
+            else:
+                seq = self.sam_static.gen_draft(index_static, start_token)
+            return (CandidateType.sequence, seq, {})
         else:
-            pred, len = pred_static, match_static        
-            cand_type = CandidateType.sequence_static
-        if len >= self.len_threshold:
-            return (cand_type, [start_token] + pred, {})
-        else:
-            return (CandidateType.tree,) + self.tree_model.lookup(start_token)
+            return (CandidateType.tree,) + self.tree_model.gen_draft(start_token)
     
     def update(self,
         tokens: Optional[torch.Tensor] = None,

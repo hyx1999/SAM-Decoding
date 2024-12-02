@@ -47,7 +47,7 @@ class TokenRecycle(TreeModel):
         for token, topk in zip(tree_tokens, topk_nest):
             self.cache[token] = topk
     
-    def lookup(self, start_token: int) -> List[int]:
+    def gen_draft(self, start_token: int) -> List[int]:
         tree_tokens = [start_token] + [0] * (len(self.tree) - 1)
         for node_id, childs in enumerate(self.tree):
             token = tree_tokens[node_id]

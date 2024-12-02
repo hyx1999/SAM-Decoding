@@ -5,18 +5,18 @@ from copy import deepcopy
 from collections import deque
 from tqdm import tqdm
 
-class SAM:
+class StaticSAM:
    
     @dataclass
     class SAMState:
         next: dict[int, int]
         link: int
         length: int
-        endpos: int
+        min_endpos: int
 
-    def __init__(self, n_predicts: int = 11):
+    def __init__(self, n_predicts: int = 40):
         self.n_predicts = n_predicts
-        self.states: List[SAM.SAMState] = [SAM.SAMState(next={}, link=-1, length=0, endpos=0)]
+        self.states: List[StaticSAM.SAMState] = [StaticSAM.SAMState(next={}, link=-1, length=0, min_endpos=0)]
         self.input_ids: List[int] = [-1]
         self.last = 0
         self.max_length = 0
@@ -26,7 +26,24 @@ class SAM:
         self.cur_length = 0
     
     def reset(self):
-        raise NotImplementedError
+        self.cur_index = 0
+        self.cur_length = 0
+
+    def add_batch_tokens(self, batch_tokens: List[List[int]], eos_token: int, verbose: bool):
+        for tokens in tqdm(batch_tokens, desc="build sam...", disable=not verbose):
+            self.add_tokens(tokens)
+            if tokens[-1] != eos_token:
+                self.add_tokens([eos_token])
+
+    @staticmethod
+    def build(
+        batch_tokens: List[List[int]], 
+        eos_token: int,
+        verbose: bool =True
+    ):
+        sam = StaticSAM()
+        sam.add_batch_tokens(batch_tokens, eos_token, verbose)
+        return sam
     
     def expand_state(self, state: SAMState):
         new_index = len(self.states)
@@ -36,10 +53,10 @@ class SAM:
     def add_state(self, token: int):
         self.max_length += 1
         cur = self.expand_state(
-            SAM.SAMState(
+            StaticSAM.SAMState(
                 next={}, link=-1, 
                 length=self.max_length, 
-                endpos=self.max_length
+                min_endpos=self.max_length
             )
         )
         p = self.last
@@ -76,70 +93,32 @@ class SAM:
         self.cur_index, self.cur_length = \
             self.transfer_state(self.cur_index, self.cur_length, token)
     
-    def to_anc(self, index: int, length: int):
-        length_to_end = self.max_length - self.states[index].endpos
-        while index != 0 and self.n_predicts > length_to_end:
-            index = self.states[index].link
-            length = self.states[index].length
-            length_to_end = self.max_length - self.states[index].endpos
-        return index, length
-    
     def add_tokens(self, tokens: List[int]):
         for token in tokens:
-            self.add_state(token)
             self.transfer_cur_state(token)
+            self.add_state(token)
         self.input_ids.extend(tokens)
-        self.cur_index, self.cur_length = \
-            self.to_anc(self.cur_index, self.cur_length)
     
     def transfer_tokens(self, tokens: List[int]):
         for token in tokens:
             self.transfer_cur_state(token)
-        self.cur_index, self.cur_length = \
-            self.to_anc(self.cur_index, self.cur_length)
 
     def lookup(self, token: int):
         index, length = \
             self.transfer_state(self.cur_index, self.cur_length, token)
-        index, length = \
-            self.to_anc(index, length)
-        endpos = self.states[index].endpos
-        pred_ids = self.input_ids[endpos + 1:endpos + self.n_predicts + 1]
+        return index, length
+
+    def to_anc(self, index: int):
+        if index != 0:
+            length_to_end = self.max_length - self.states[index].min_endpos
+            while self.states[index].link != 0 and self.n_predicts > length_to_end:
+                index = self.states[index].link
+                length_to_end = self.max_length - self.states[index].min_endpos
+        return index
+
+    def gen_draft(self, index: int, start_token: int):
+        endpos = self.states[index].min_endpos
+        pred_ids = [start_token] + self.input_ids[endpos + 1:endpos + self.n_predicts]
         if len(pred_ids) < self.n_predicts:
             pred_ids.extend([0] * (self.n_predicts - len(pred_ids)))
-        return pred_ids, length
-
-
-class DynSAM(SAM):
-        
-    def reset(self):
-        self.states: List[SAM.SAMState] = [SAM.SAMState(next={}, link=-1, length=0, endpos=0)]
-        self.input_ids: List[int] = [-1]
-        self.last = 0
-        self.max_length = 0
-        self.cur_index = 0
-        self.cur_length = 0
-
-
-class StaticSAM(SAM):
-
-    def reset(self):
-        self.cur_index = 0
-        self.cur_length = 0
-
-    def add_batch_tokens(self, batch_tokens: List[List[int]], eos_token: int, verbose: bool):
-        for tokens in tqdm(batch_tokens, desc="build sam...", disable=not verbose):
-            self.add_tokens(tokens)
-            if tokens[-1] != eos_token:
-                self.add_tokens([eos_token])
-
-    @staticmethod
-    def build(
-        batch_tokens: List[List[int]], 
-        eos_token: int,
-        n_predict: int,
-        verbose: bool =True
-    ):
-        sam = StaticSAM(n_predict)
-        sam.add_batch_tokens(batch_tokens, eos_token, verbose)
-        return sam
+        return pred_ids
