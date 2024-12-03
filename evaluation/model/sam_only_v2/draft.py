@@ -38,6 +38,7 @@ class DraftModel(torch.nn.Module):
         self.sam_static.max_predicts = config.max_predicts
         self.sam_static.alpha = config.alpha
         self.sam_static.K = config.K
+        self.sam_static.device = device
         self.len_bias = config.len_bias
 
     @profile_decorator("DraftModel.reset")        

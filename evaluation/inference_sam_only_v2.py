@@ -141,7 +141,7 @@ if __name__ == "__main__":
         args.model_path,
         torch_dtype=str_to_torch_dtype(args.dtype),
         low_cpu_mem_usage=True,
-        device_map="cuda",
+        device_map="auto",
         # attn_implementation="eager",
     )
 
@@ -156,13 +156,15 @@ if __name__ == "__main__":
         sam = load_sam(args.sam_path)
     else:
         sam = None
+    device = next(model.lm_head.parameters()).device
+    print("device:", device)
     draft = DraftModel(
         samd_config,
         sam_dyn=None,
         sam_static=sam,
         lm=model,
         dtype=str_to_torch_dtype(args.dtype),
-        device="cuda"
+        device=device
     )
     samd_model = SamdModel(
         samd_config, 
@@ -170,7 +172,7 @@ if __name__ == "__main__":
         draft, 
         tokenizer.eos_token_id,
         str_to_torch_dtype(args.dtype),
-        "cuda", 
+        device, 
     )
 
     if args.temperature > 0:
