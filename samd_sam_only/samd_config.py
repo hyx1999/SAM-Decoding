@@ -12,7 +12,6 @@ class SamdConfig:
     alpha: float = field(default=4.0)
     K: int = field(default=8)
     len_bias: int = field(default=5)
-    len_threshold: int = field(default=5)
 
 
 class ForwardType(str, Enum):
