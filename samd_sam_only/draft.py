@@ -40,6 +40,7 @@ class DraftModel(torch.nn.Module):
         self.sam_static.K = config.K
         self.sam_static.device = device
         self.len_bias = config.len_bias
+        self.len_threshold = config.len_threshold
 
     @profile_decorator("DraftModel.reset")        
     def reset(self):
@@ -48,12 +49,19 @@ class DraftModel(torch.nn.Module):
 
     @profile_decorator("DraftModel.lookup")
     def lookup(self, start_token: int):
+        # index_static, match_static = self.sam_static.lookup(start_token)
+        # tree, buffers_kwargs = self.sam_static.gen_draft(index_static, match_static, start_token)
+        # return (CandidateType.tree, tree, buffers_kwargs)
         index_dyn, match_dyn = self.sam_dyn.lookup(start_token)
         index_static, match_static = self.sam_static.lookup(start_token)
         match_static -= self.len_bias
         if match_dyn >= match_static:
-            seq, buffers_kwargs = self.sam_dyn.gen_draft(index_dyn, match_dyn, start_token)
-            return (CandidateType.sequence, seq, buffers_kwargs)
+            if match_dyn >= self.len_threshold:
+                seq, buffers_kwargs = self.sam_dyn.gen_draft(index_dyn, match_dyn, start_token)
+                return (CandidateType.sequence, seq, buffers_kwargs)
+            else:
+                tree, buffers_kwargs = self.sam_dyn.gen_tree_draft(index_dyn, match_dyn, start_token)
+                return (CandidateType.tree, tree, buffers_kwargs)                
         else:
             tree, buffers_kwargs = self.sam_static.gen_draft(index_static, match_static, start_token)
             return (CandidateType.tree, tree, buffers_kwargs)
