@@ -54,7 +54,7 @@ class SamdModel(nn.Module):
         self.tree_retrieve_indices: torch.Tensor = None
         
         # buffers
-        self.cache: SamdCache = None
+        self.cache: Union[SamdCache, SamdStaticCache] = None
         self.forward_state = ForwardState(None)
         self.mask_state = MaskState(None)
         
@@ -97,7 +97,7 @@ class SamdModel(nn.Module):
         self.tree_retrieve_indices = buffers_kwargs.get("tree_retrieve_indices", self.base_tree_retrieve_indices)
         self.mask_state.set_state(self.tree_attn_mask)
     
-    @profile_decorator("SamdModel.prefill")
+    # @profile_decorator("SamdModel.prefill")
     def prefill(self, 
         input_ids: torch.Tensor, 
         attention_mask: torch.Tensor,
@@ -127,7 +127,7 @@ class SamdModel(nn.Module):
             sample_p = torch.softmax(logits[:, -1], dim=-1)
         return sample_p  # [1, D]
     
-    @profile_decorator("SamdModel.decode")
+    # @profile_decorator("SamdModel.decode")
     def decode(self, sample_p: torch.Tensor, length: int):
         candidates = gen_candidates(
             sample_p,
@@ -181,7 +181,7 @@ class SamdModel(nn.Module):
         # print("new_tokens:\n{}".format(new_tokens))
         return sample_p, new_tokens
 
-    @profile_decorator("SamdModel.update_state")
+    # @profile_decorator("SamdModel.update_state")
     def update_state(self,
         tree_tokens: torch.Tensor,
         tree_logits: torch.Tensor,
@@ -209,6 +209,23 @@ class SamdModel(nn.Module):
         self.cache.select_indices(indices, accept_length.item())
         
         return tokens.tolist()
+
+    def set_cache(self, generation_config: SamdGenerationConfig):
+        if self.samd_config.cache_type == "dynamic":
+            self.cache = SamdCache(self.lm.config.num_hidden_layers)  # use dynamic cache
+        else:
+            if self.cache is None:
+                print("init static cache...")
+                self.cache = SamdStaticCache(
+                    self.lm.config,
+                    batch_size=1,
+                    max_cache_len=generation_config.max_cache_len,
+                    device=self.device,
+                    dtype=self.dtype,
+                    hf_device_map=self.lm.hf_device_map,
+                )
+            else:
+                self.cache.reset()
     
     @torch.inference_mode()
     def generate(self,
@@ -222,8 +239,7 @@ class SamdModel(nn.Module):
 
         assert input_ids.shape[0] == 1, "Only support batch_size == 1"  # [1, N]
 
-        # self.reset_static_cache()        
-        self.cache = SamdCache(self.lm.config.num_hidden_layers)  # use dynamic cache
+        self.set_cache(generation_config)
 
         self.draft.reset()
         
@@ -235,7 +251,7 @@ class SamdModel(nn.Module):
         decode_steps = 0
         accepet_length_per_step = []
         for step in range(generation_config.max_new_tokens):
-            if input_length + decode_tokens + self.samd_config.n_predicts >= generation_config.max_cache_len:
+            if input_length + decode_tokens + self.samd_config.max_predicts >= generation_config.max_cache_len:
                 break
             sample_p, new_ids = self.decode(sample_p, input_length + decode_tokens)
             eos_index = None
@@ -249,7 +265,7 @@ class SamdModel(nn.Module):
             decode_steps += 1
             decode_tokens += len(new_ids)
             accepet_length_per_step.append(len(new_ids))
-            profile_accept_length("lookup", len(new_ids))
+            # profile_accept_length("lookup", len(new_ids))
             if eos_index is not None:
                 break
             if decode_tokens >= generation_config.max_new_tokens:

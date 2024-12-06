@@ -4,7 +4,7 @@ from enum import Enum
 from collections import namedtuple
 
 from .samd_config import SamdConfig
-from .sam import DynSAM, StaticSAM
+from .sam import DynSAM, StaticSAM, NullStaticSAM
 from .tree_model import TreeModel, tree_model_cls
 from transformers import LlamaConfig, LlamaForCausalLM
 
@@ -36,7 +36,7 @@ class DraftModel(torch.nn.Module):
         tree_cls = tree_model_cls[config.tree_method]
         self.config = config
         self.sam_dyn = sam_dyn if sam_dyn is not None else DynSAM(config.n_predicts)
-        self.sam_static = sam_static if sam_static is not None else StaticSAM(config.n_predicts)
+        self.sam_static = sam_static if sam_static is not None else NullStaticSAM(config.n_predicts)
         self.tree_model = tree_model if tree_model is not None else tree_cls(config, lm, dtype, device)
         
         self.sam_dyn.n_predicts = config.n_predicts
@@ -49,7 +49,6 @@ class DraftModel(torch.nn.Module):
         self.sam_static.reset()
         self.tree_model.reset()
 
-    @profile_lookup_decorator("lookup")
     def lookup(self, start_token: int):
         index_dyn, match_dyn = self.sam_dyn.lookup(start_token)
         index_static, match_static = self.sam_static.lookup(start_token)

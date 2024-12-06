@@ -105,6 +105,7 @@ class DynSAM:
         return index
 
     def gen_draft(self, index: int, start_token: int):
+        index = self.to_anc(index)
         endpos = self.states[index].min_endpos
         pred_ids = [start_token] + self.input_ids[endpos + 1:endpos + self.n_predicts]
         if len(pred_ids) < self.n_predicts:

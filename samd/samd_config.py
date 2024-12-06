@@ -9,9 +9,13 @@ from enum import Enum
 @dataclass
 class SamdConfig:
     n_predicts: int = field(default=40)
+    max_predicts: int = field(default=70)
     len_threshold: int = field(default=5)
     len_bias: int = field(default=5)
 
+    cache_type: Literal["dynamic", "static"] = field(
+        default="static"
+    )
     use_last_hidden_states: bool = field(default=False)
 
     tree_method: Literal["token_recycle", "eagle", "eagle2"] = field(

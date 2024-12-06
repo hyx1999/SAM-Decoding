@@ -117,8 +117,21 @@ class StaticSAM:
         return index
 
     def gen_draft(self, index: int, start_token: int):
+        # index = self.to_anc(index)
         endpos = self.states[index].min_endpos
         pred_ids = [start_token] + self.input_ids[endpos + 1:endpos + self.n_predicts]
         if len(pred_ids) < self.n_predicts:
             pred_ids.extend([0] * (self.n_predicts - len(pred_ids)))
         return pred_ids
+
+
+class NullStaticSAM(StaticSAM):
+    
+    def __init__(self, n_predicts = 40):
+        super().__init__(n_predicts)
+    
+    def transfer_tokens(self, tokens):
+        pass
+    
+    def gen_draft(self, index, start_token):
+        return -1, -1
