@@ -7,7 +7,7 @@ import argparse
 from fastchat.utils import str_to_torch_dtype
 from evaluation.eval import run_evals, reorg_answer_files
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
-from evaluation.model.sam_only import SamdConfig, SamdModel, SamdGenerationConfig, DraftModel, load_sam
+from samd_sam_only import SamdConfig, SamdModel, SamdGenerationConfig, DraftModel, load_sam
 
 def sam_only_forward(
     inputs, 
@@ -112,7 +112,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--samd_max_predicts",
         type=int,
-        default=15
+        default=40
+    )
+    parser.add_argument(
+        "--samd_alpha",
+        type=float,
+        default=4.0
     )
     parser.add_argument(
         "--samd_len_bias",
@@ -136,7 +141,7 @@ if __name__ == "__main__":
         args.model_path,
         torch_dtype=str_to_torch_dtype(args.dtype),
         low_cpu_mem_usage=True,
-        device_map="cuda",
+        device_map="auto",
         # attn_implementation="eager",
     )
 
@@ -144,19 +149,22 @@ if __name__ == "__main__":
 
     samd_config = SamdConfig(
         max_predicts=args.samd_max_predicts,
+        alpha=args.samd_alpha,
         len_bias=args.samd_len_bias,
     )
     if args.sam_path is not None:
         sam = load_sam(args.sam_path)
     else:
         sam = None
+    device = next(model.lm_head.parameters()).device
+    print("device:", device)
     draft = DraftModel(
         samd_config,
         sam_dyn=None,
         sam_static=sam,
         lm=model,
         dtype=str_to_torch_dtype(args.dtype),
-        device="cuda"
+        device=device
     )
     samd_model = SamdModel(
         samd_config, 
@@ -164,7 +172,7 @@ if __name__ == "__main__":
         draft, 
         tokenizer.eos_token_id,
         str_to_torch_dtype(args.dtype),
-        "cuda", 
+        device, 
     )
 
     if args.temperature > 0:
