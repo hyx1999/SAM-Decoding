@@ -44,8 +44,10 @@ def main(args):
             device_map="auto",
         )
         tokenizer = AutoTokenizer.from_pretrained(args.model)
-        # sam = load_sam("local_cache/sam_alpaca_vicuna.pkl")
-        sam = None
+        if args.sam_path is not None:
+            sam = load_sam(args.sam_path)
+        else:
+            sam = None
         samd_config = SamdConfig()
         draft = DraftModel(
             samd_config,
@@ -238,6 +240,11 @@ if __name__ == "__main__":
         "--debug",
         action="store_true",
         help="Print useful debug information (e.g., prompts)",
+    )
+    parser.add_argument(
+        "--sam_path",
+        type=str,
+        default=None
     )
     args = parser.parse_args()
     main(args)
