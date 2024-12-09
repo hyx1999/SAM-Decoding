@@ -2,14 +2,14 @@ import os
 import argparse
 from transformers import AutoTokenizer
 from datasets import load_from_disk, Dataset
-from samd import SamdConfig, build_sam, dump_sam
+from samd_sam_only import SamdConfig, build_sam, dump_sam
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_name', type=str, default='/data/models/vicuna-7b-v1.3')
 parser.add_argument('--sam_data_path', type=str, default='sam_data/sam_dialogues')
 parser.add_argument('--cutoff_len', type=int, default=2048)
 parser.add_argument('--n_predicts', type=int, default=10)
-parser.add_argument('--sam_path', type=str, default="local_cache/sam_alpaca_vicuna-7b-v1.3_min-endpos.pkl")
+parser.add_argument('--sam_path', type=str, default="local_cache/sam_alpaca_vicuna-7b-v1.3.pkl")
 args = parser.parse_args()
 
 sam_data = load_from_disk(args.sam_data_path)
