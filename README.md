@@ -1,7 +1,7 @@
 # SAM-Decoding
 
 <p align="center">
-| <a href="https://arxiv.org/abs/2411.10666"><b>Paper</b></a> |
+| <a href="https://arxiv.org/abs/2411.10666"><b>Paper</b></a> | <a href="https://zhuanlan.zhihu.com/p/5841399739"><b>Blog</b></a> | 
 </p>
 
 ---
@@ -54,7 +54,7 @@ Expeiment result on [Spec-Bench](https://github.com/hemingkx/Spec-Bench)
 | [Tokey Recycle](https://arxiv.org/abs/2408.08696)             |          1.92x          |    1.61x    |     1.96x      |       1.71x        |         2.16x          |           1.68x           |         2.83          |   1.84x   |
 | SAM-Decoding\[Token Recycle\]                                 |          2.48x          |    1.73x    |     2.86x      |       1.98x        |         2.44x          |           2.14x           |         3.03          |   2.27x   |
 | [EAGLE2](https://github.com/SafeAILab/EAGLE)                  |          2.87x          |    1.92x    |     2.33x      |       2.20x        |         2.88x          |           2.03x           |         4.36          |   2.38x   |
-| SAM-Decoding\[EAGLE2\]                                        |          3.02x          |    1.89x    |     2.76x      |       2.19x        |         2.83x          |           2.23x           |         4.61          |   2.49x   |
+| SAM-Decoding\[EAGLE2\]                                        |          3.09x          |    1.93x    |     2.95x      |       2.28x        |         2.93x          |           2.28x           |         4.62          |   2.58x   |
 
 
 ## Dataset
