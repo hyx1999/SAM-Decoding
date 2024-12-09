@@ -41,32 +41,43 @@ At the same time, since SAM-Decoding can compute the longest matching length, it
 
 Expeiment result on [Spec-Bench](https://github.com/hemingkx/Spec-Bench)
 
-**warning: Please note that these results are not final and may be revised**
+<!-- **warning: Please note that these results are not final and may be revised** -->
 
 - Device: a single NVIDIA RTX A6000 GPU (48GB) with 20 CPU cores
-- Testing environment: Pytorch 2.3.0, under CUDA 12.1
+- Testing environment: Pytorch 2.3.0, Transformers 4.36.1, CUDA 12.1
 - Experimental Settings: Vicuna-7B-v1.3, greedy decoding, FP16 precision, batch size = 1
 
 | Models                                                        | Multi-turn Conversation | Translation | Summa-rization | Question Answering | Mathematical Reasoning | Retrieval-aug. Generation | #Mean Accepted Tokens |  Overall  |
 | ------------------------------------------------------------  | :---------------------: | :---------: | :------------: | :----------------: | :--------------------: | :-----------------------: | :-------------------: | :-------: |
-| SAM-Decoding\[EAGLE2\]                                        |          3.02x          |    1.89x    |     2.76x      |       2.19x        |         2.83x          |           2.23x           |         4.61          |   2.49x   |
-| [EAGLE2](https://github.com/SafeAILab/EAGLE)                  |          2.87x          |    1.92x    |     2.33x      |       2.20x        |         2.88x          |           2.03x           |         4.36          |   2.38x   |
-| SAM-Decoding\[EAGLE\]                                         |          2.78x          |    1.88x    |     2.65x      |       2.12x        |         2.57x          |           2.10x           |         3.77          |   2.35x   |
-| [EAGLE](https://huggingface.co/blog/assisted-generation)      |          2.63x          |    1.92x    |     2.28x      |       2.11x        |         2.64x          |           1.95x           |         3.57          |   2.27x   |
-| SAM-Decoding\[Token Recycle\]                                 |          2.48x          |    1.73x    |     2.86x      |       1.98x        |         2.44x          |           2.14x           |         3.03          |   2.27x   |
+| PLD                                                           |          1.60x          |    0.95x    |     2.44x      |       1.18x        |         1.59x          |           1.72x           |         1.75          |   1.56x   |
+| SAM-Decoding                                                  |          2.07x          |    1.20x    |     2.43x      |       1.62x        |         1.91x          |           1.81x           |         2.30          |   1.84x   |
 | [Tokey Recycle](https://arxiv.org/abs/2408.08696)             |          1.92x          |    1.61x    |     1.96x      |       1.71x        |         2.16x          |           1.68x           |         2.83          |   1.84x   |
+| SAM-Decoding\[Token Recycle\]                                 |          2.48x          |    1.73x    |     2.86x      |       1.98x        |         2.44x          |           2.14x           |         3.03          |   2.27x   |
+| [EAGLE2](https://github.com/SafeAILab/EAGLE)                  |          2.87x          |    1.92x    |     2.33x      |       2.20x        |         2.88x          |           2.03x           |         4.36          |   2.38x   |
+| SAM-Decoding\[EAGLE2\]                                        |          3.02x          |    1.89x    |     2.76x      |       2.19x        |         2.83x          |           2.23x           |         4.61          |   2.49x   |
 
-## Data
+
+## Dataset
 
 The test data for SAM-Decoding is available in the Spec-Bench repository. To proceed, you should place the relevant data files `Spec-Bench/data` from the [Spec-Bench](https://github.com/hemingkx/Spec-Bench) repository into the evaluation directory of our project `evaluation/data`.
 
+For other datasets, such as HumanEval and HAGRID, we also converted them to the same format as spec_bench.
+
+## Prepare Static SAM
+
+In the experiment, we used SAM based on alpaca-clean, gsm8k, and python-instruction datasets. We can build this SAM by executing the scripts `tools/prepare_prompts.py`, `tools/gen_response.py`, `tools/gen_sam_alpaca.py` and `tools/gen_sam_alpaca_sam_only.py` in sequence.
+
+We distinguish between samd and samd_sam_only due to the fact that we have some optimizations for the case where the auxiliary decoding method is not used, but these optimizations do not result in additional gain when auxiliary decoding is used.
+
 ## Inference
 
-An example of using SAM-Decidubg is provided in `tests/test_samd.py`, which can be executed via `scripts/test_samd.sh`. 
+An example of using SAM-Decidubg is provided in `tests/test_samd.py` and ``tests/test_samd_sam_only.py``, which can be executed via `scripts/test_samd.sh` and `scripts/test_samd_sam_only.sh`. 
 
-Note that this script relies on a SAM (StaticSAM) built from a text base. We can build this SAM by executing the scripts `tools/gen_sam_none.py`.
+Note that this script relies on a SAM (StaticSAM) built from alpaca dataset, GSM8K and python-instruction. If you didn't build a static SAM, please set sam_path to None.
 
-In the experiment, we used SAM based on alpaca-clean, gsm8k, and python-instruction datasets. We can build this SAM by executing the scripts `tools/prepare_prompts.py`, `tools/gen_response.py`, `tools/gen_sam_alpaca.py` in sequence.
+We also provide cli tools for inference, which can be found at `samd/inference/cli.py` and `samd_sam_only/inference/cli.py`.
+
+## Example
 
 ```python
 import argparse
@@ -91,10 +102,12 @@ import time
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path', type=str, required=True)
+    parser.add_argument('--sam_path', type=str, default=None)
     parser.add_argument('--samd_n_predicts', type=int, default=15)
     parser.add_argument('--max_new_tokens', type=int, default=512)
+    parser.add_argument('--max_cache_len', type=int, default=2048)
     parser.add_argument("--tree_method", type=str, default="token_recycle")
-    parser.add_argument("--tree_model_path", type=str, default=None)
+    parser.add_argument("--tree_model_path", type=str, default="/data/models/EAGLE-Vicuna-7B-v1.3")
     parser.add_argument('--dtype', type=str, default='float16', choices=['float16', 'float32'])
     parser.add_argument('--device', type=str, default="cuda", choices=['cuda', 'cpu'])
     args = parser.parse_args()
@@ -106,7 +119,7 @@ def parse_args():
 
 @torch.inference_mode()
 def samd_generate(args, inputs, model, tokenizer):
-    sam = load_sam(args.sam_path)
+    sam = load_sam(args.sam_path) if args.sam_path is not None else None
     samd_config = SamdConfig(
         n_predicts=args.samd_n_predicts,
         tree_method=args.tree_method,
@@ -114,6 +127,7 @@ def samd_generate(args, inputs, model, tokenizer):
     )
     draft = DraftModel(
         samd_config, 
+        sam_static=sam,
         lm=model,
         dtype=args.dtype,
         device=args.device
@@ -130,6 +144,9 @@ def samd_generate(args, inputs, model, tokenizer):
     
     gen_config = SamdGenerationConfig(
         max_new_tokens=args.max_new_tokens,
+        max_cache_len=args.max_cache_len,
+        greedy=True,
+        temperature=0.0
     )
 
     st = time.perf_counter()
