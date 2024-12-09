@@ -8,7 +8,7 @@ from transformers import (
     LlamaConfig,
     LlamaTokenizer
 )
-from samd import (
+from samd_sam_only import (
     SamdConfig, 
     SamdModel, 
     SamdGenerationConfig,
@@ -21,11 +21,11 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path', type=str, required=True)
     parser.add_argument('--sam_path', type=str, default=None)
-    parser.add_argument('--samd_n_predicts', type=int, default=15)
+    parser.add_argument("--samd_max_predicts", type=int, default=40)
+    parser.add_argument("--samd_alpha", type=float, default=4.0)
+    parser.add_argument("--samd_len_bias", type=int, default=5)
     parser.add_argument('--max_new_tokens', type=int, default=512)
     parser.add_argument('--max_cache_len', type=int, default=2048)
-    parser.add_argument("--tree_method", type=str, default="token_recycle")
-    parser.add_argument("--tree_model_path", type=str, default="/data/models/EAGLE-Vicuna-7B-v1.3")
     parser.add_argument('--dtype', type=str, default='float16', choices=['float16', 'float32'])
     parser.add_argument('--device', type=str, default="cuda", choices=['cuda', 'cpu'])
     args = parser.parse_args()
@@ -58,9 +58,9 @@ def samd_generate(args, inputs, model, tokenizer):
     assert inputs.input_ids.shape[-1] + args.max_new_tokens <= args.max_cache_len
     sam = load_sam(args.sam_path) if args.sam_path is not None else None
     samd_config = SamdConfig(
-        n_predicts=args.samd_n_predicts,
-        tree_method=args.tree_method,
-        tree_model_path=args.tree_model_path,
+        max_predicts=args.samd_max_predicts,
+        alpha=args.samd_alpha,
+        len_bias=args.samd_len_bias,
     )
     draft = DraftModel(
         samd_config, 
