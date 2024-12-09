@@ -44,8 +44,8 @@ def main(args):
             device_map="auto",
         )
         tokenizer = AutoTokenizer.from_pretrained(args.model)
-        sam = load_sam("local_cache/sam_alpaca_vicuna.pkl")
-        # sam = None
+        # sam = load_sam("local_cache/sam_alpaca_vicuna.pkl")
+        sam = None
         samd_config = SamdConfig()
         draft = DraftModel(
             samd_config,

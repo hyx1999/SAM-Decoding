@@ -55,7 +55,7 @@ class SamdModel(nn.Module):
         self.tree_retrieve_indices: torch.Tensor = None
         
         # buffers
-        self.cache: SamdCache = None
+        self.cache: Union[SamdCache, SamdStaticCache] = None
         self.forward_state = ForwardState(None)
         self.mask_state = MaskState(None)
         
@@ -220,6 +220,22 @@ class SamdModel(nn.Module):
         input_ids_list = [input_ids_list[:input_length + generation_config.max_new_tokens]]
         return Outputs(input_ids_list, decode_tokens, decode_steps, accepet_length_per_step)
 
+    def set_cache(self, generation_config: SamdGenerationConfig):
+        if self.samd_config.cache_type == "dynamic":
+            self.cache = SamdCache(self.lm.config.num_hidden_layers)  # use dynamic cache
+        else:
+            if self.cache is None:
+                print("init static cache...")
+                self.cache = SamdStaticCache(
+                    self.lm.config,
+                    batch_size=1,
+                    max_cache_len=generation_config.max_cache_len,
+                    device=self.device,
+                    dtype=self.dtype,
+                    hf_device_map=self.lm.hf_device_map,
+                )
+            else:
+                self.cache.reset()
 
     @torch.inference_mode()
     def stream_generate(self,
@@ -234,8 +250,7 @@ class SamdModel(nn.Module):
 
         assert input_ids.shape[0] == 1, "Only support batch_size == 1"  # [1, N]
 
-        # self.reset_static_cache()        
-        self.cache = SamdCache(self.lm.config.num_hidden_layers)  # use dynamic cache
+        self.set_cache(generation_config) 
 
         self.draft.reset()
         
@@ -283,8 +298,7 @@ class SamdModel(nn.Module):
 
         assert input_ids.shape[0] == 1, "Only support batch_size == 1"  # [1, N]
 
-        # self.reset_static_cache()        
-        self.cache = SamdCache(self.lm.config.num_hidden_layers)  # use dynamic cache
+        self.set_cache(generation_config) 
 
         self.draft.reset()
         

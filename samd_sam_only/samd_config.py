@@ -12,7 +12,9 @@ class SamdConfig:
     alpha: float = field(default=4.0)
     K: int = field(default=8)
     len_bias: int = field(default=5)
-
+    cache_type: Literal["dynamic", "static"] = field(
+        default="static"
+    )
 
 class ForwardType(str, Enum):
     prefill = "prefill"
