@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from collections import namedtuple
 from typing import Optional, Union, List, Literal, Tuple, Dict
 from types import MethodType
-from transformers import LlamaForCausalLM
+from transformers import LlamaForCausalLM, LlamaTokenizer
 from .samd_config import SamdConfig, ForwardState, ForwardType, MaskState
 from .utils import (
     OptionalTensor,
@@ -273,21 +273,50 @@ class SamdModel(nn.Module):
         input_ids_list = [input_ids_list[:input_length + generation_config.max_new_tokens]]
         return Outputs(input_ids_list, decode_tokens, decode_steps, accepet_length_per_step)
 
+    @torch.inference_mode()
+    def stream_generate(self,
+        input_ids: torch.Tensor,
+        tokenizer: LlamaTokenizer,
+        generation_config: SamdGenerationConfig = None, 
+    ):
+        attention_mask = None
+        if generation_config is None:
+            generation_config = SamdGenerationConfig()
+        self.gen_config = generation_config
 
-"""
-    def reset_static_cache(self):
-        max_cache_len = self.gen_config.max_cache_len + self.tree_size
-        if self.cache is not None and self.cache.max_cache_len == max_cache_len:
-            self.cache.reset()
-        else:
-            self.cache = SamdStaticCache(
-                self.lm.config.num_hidden_layers, 
-                self.lm.config.num_attention_heads,
-                self.lm.config.num_key_value_heads,
-                self.lm.config.hidden_size,
-                max_batch_size=1,
-                max_cache_len=max_cache_len,
-                device=self.device,
-                dtype=self.dtype,
-            )
-"""
+        assert input_ids.shape[0] == 1, "Only support batch_size == 1"  # [1, N]
+
+        self.set_cache(generation_config) 
+
+        self.draft.reset()
+        
+        input_ids_list = input_ids.squeeze(0).tolist()
+        sample_p = self.prefill(input_ids, attention_mask)
+        
+        input_length = input_ids.shape[-1]
+        decode_tokens = 0
+        for step in range(generation_config.max_steps):
+            if input_length + decode_tokens + self.samd_config.max_predicts >= generation_config.max_cache_len:
+                break
+            sample_p, new_ids = self.decode(sample_p, input_length + decode_tokens)
+            eos_index = None
+            if self.eos_token in new_ids:
+                eos_index = new_ids.index(self.eos_token)
+                new_ids = new_ids[:eos_index + 1]
+            elif self.stop_token is not None and self.stop_token in new_ids:
+                eos_index = new_ids.index(self.stop_token)
+                new_ids = new_ids[:eos_index + 1]
+            input_ids_list.extend(new_ids)
+            yield {
+                "text": tokenizer.decode(
+                    input_ids_list[input_length:],
+                    skip_special_tokens=True,
+                    spaces_between_special_tokens=False,
+                    clean_up_tokenization_spaces=True,
+                )
+            }
+            decode_tokens += len(new_ids)
+            if eos_index is not None:
+                break
+            if decode_tokens >= generation_config.max_new_tokens:
+                break

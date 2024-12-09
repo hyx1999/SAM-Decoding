@@ -29,6 +29,7 @@ class OptionalTensor:
 
 @dataclass
 class SamdGenerationConfig:
+    max_steps: int = field(default=512)
     max_new_tokens: int = field(default=512)
     max_cache_len: int = field(default=2048)
     greedy: bool = field(default=True)
