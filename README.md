@@ -1,16 +1,5 @@
 # SAM-Decoding
 
-<p align="center">
-| <a href="https://arxiv.org/abs/2411.10666"><b>Paper</b></a> | <a href="https://zhuanlan.zhihu.com/p/5841399739"><b>Blog</b></a> | 
-</p>
-
----
-
-*News* 🔥
-- [2024/11] SAM-Decoding is now available on [arXiv](https://arxiv.org/abs/2411.10666).
-
----
-
 ## Introduction
 
 SAM-Decoding introduces a new speculative decoding technique designed for Large Language Models (LLMs). This method is particularly suited for scenarios where the model's generated content overlaps with the input context or existing textual information. It is primarily aimed at applications where the model's output aligns with the given prompt or text base, such as summarization, retrieval-augmented generation, code editing, and document-based question answering. Moreover, SAM-Decoding maintains performance levels that are comparable to those of the leading speculative decoding methods in other domains.
