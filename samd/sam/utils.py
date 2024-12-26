@@ -8,7 +8,6 @@ from .static_sam import StaticSAM
 from ..samd_config import SamdConfig
 
 def build_sam(
-    config: SamdConfig,
     batch_tokens: List[List[int]],
     eos_token: int,
 ):
