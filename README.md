@@ -69,6 +69,8 @@ In the experiment, we used SAM based on alpaca-clean, gsm8k, and python-instruct
 
 We distinguish between samd and samd_sam_only due to the fact that we have some optimizations for the case where the auxiliary decoding method is not used, but these optimizations do not result in additional gain when auxiliary decoding is used.
 
+The data we used is available at this [link](https://drive.google.com/file/d/1N7FARwsGQXIbL_3B2uEYh3CkDh4Bc6it/view?usp=share_link).
+
 ## Inference
 
 An example of using SAM-Decidubg is provided in `tests/test_samd.py` and ``tests/test_samd_sam_only.py``, which can be executed via `scripts/test_samd.sh` and `scripts/test_samd_sam_only.sh`. 
