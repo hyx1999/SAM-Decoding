@@ -79,6 +79,8 @@ Note that this script relies on a SAM (StaticSAM) built from alpaca dataset, GSM
 
 We also provide cli tools for inference, which can be found at `samd/inference/cli.py` and `samd_sam_only/inference/cli.py`.
 
+Note: Currently the data used to build static sam is limited and comes from vicuna-7b, which leads to discrepancies between the generated drafts and the generated results of larger models. Therefore, in the case of accelerating larger models based on SAM-Decoding [EAGLE2], it is recommended to turn off static sam to achieve the optimal acceleration ratio.
+
 ## Example
 
 ```python
