@@ -39,7 +39,7 @@ def parse_args():
 def generate(args, inputs, model, tokenizer):
     model.eval()
     assert inputs.input_ids.shape[-1] + args.max_new_tokens <= args.max_cache_len
-    gen_config = SamdGenerationConfig(
+    gen_config = GenerationConfig(
         max_new_tokens=args.max_new_tokens,
         max_cache_len=args.max_cache_len,
         greedy=True,
@@ -116,7 +116,7 @@ def main():
         return_tensors="pt"
     ).to(args.device)
     
-    # generate(args, inputs, model, tokenizer)
+    generate(args, inputs, model, tokenizer)
 
     samd_generate(args, inputs, model, tokenizer)
 
