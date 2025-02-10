@@ -158,15 +158,10 @@ class SamdModel(nn.Module):
             tree_last_hidden_states = OptionalTensor(None)
         if candidates.type == CandidateType.sequence:
             candidate_logits = tree_logits
-            candidate_last_hidden_states = tree_last_hidden_states
             candidate_indices = OptionalTensor(None)
         else:
             candidate_logits = tree_logits.squeeze(0)[self.tree_retrieve_indices]
-            candidate_last_hidden_states = tree_last_hidden_states.apply(
-                lambda x: x.squeeze(0)[self.tree_retrieve_indices]
-            )
             candidate_indices = OptionalTensor(self.tree_retrieve_indices)
-
         best_candidate, accept_length, sample_p \
             = eval_posterior(candidate_logits, candidates.candidate_tokens, self.gen_config)
         new_tokens = self.update_state(
@@ -176,7 +171,7 @@ class SamdModel(nn.Module):
             accept_length,
             candidates.candidate_tokens,
             candidate_indices,
-            candidate_last_hidden_states,
+            tree_last_hidden_states,
         )
         # print("new_tokens:\n{}".format(new_tokens))
         return sample_p, new_tokens
@@ -189,17 +184,22 @@ class SamdModel(nn.Module):
         accept_length: torch.Tensor,
         candiate_tokens: torch.Tensor,
         candidate_indices: OptionalTensor,
-        candidate_last_hidden_states: OptionalTensor,
+        tree_last_hidden_states: OptionalTensor,
     ):
         tokens = candiate_tokens[best_candidate][:accept_length]
         
         indices: Optional[torch.Tensor] = candidate_indices.apply(
             lambda x: x[best_candidate][:accept_length]
         ).data
-        last_hidden_states: Optional[torch.Tensor] = candidate_last_hidden_states.apply(
-            lambda x: x[best_candidate][:accept_length]
-        ).data
-        
+        if indices is not None:  # tree
+            last_hidden_states: Optional[torch.Tensor] = tree_last_hidden_states.apply(
+                lambda x: x.squeeze(0)[indices][:accept_length]
+            ).data
+        else:
+            last_hidden_states: Optional[torch.Tensor] = tree_last_hidden_states.apply(
+                lambda x: x.squeeze(0)[:accept_length]
+            ).data
+                
         self.draft.update(
             tokens=tokens, 
             last_hidden_states=last_hidden_states,
