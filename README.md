@@ -58,6 +58,8 @@ In the experiment, we used SAM based on alpaca-clean, gsm8k, and python-instruct
 
 We distinguish between samd and samd_sam_only due to the fact that we have some optimizations for the case where the auxiliary decoding method is not used, but these optimizations do not result in additional gain when auxiliary decoding is used.
 
+The data we used is available at this [link](https://drive.google.com/file/d/1N7FARwsGQXIbL_3B2uEYh3CkDh4Bc6it/view?usp=share_link).
+
 ## Inference
 
 An example of using SAM-Decidubg is provided in `tests/test_samd.py` and ``tests/test_samd_sam_only.py``, which can be executed via `scripts/test_samd.sh` and `scripts/test_samd_sam_only.sh`. 
@@ -65,6 +67,8 @@ An example of using SAM-Decidubg is provided in `tests/test_samd.py` and ``tests
 Note that this script relies on a SAM (StaticSAM) built from alpaca dataset, GSM8K and python-instruction. If you didn't build a static SAM, please set sam_path to None.
 
 We also provide cli tools for inference, which can be found at `samd/inference/cli.py` and `samd_sam_only/inference/cli.py`.
+
+Note: Currently the data used to build static sam is limited and comes from vicuna-7b, which leads to discrepancies between the generated drafts and the generated results of larger models. Therefore, in the case of accelerating larger models based on SAM-Decoding [EAGLE2], it is recommended to turn off static sam to achieve the optimal acceleration ratio.
 
 ## Example
 

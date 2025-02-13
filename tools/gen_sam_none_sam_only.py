@@ -18,9 +18,7 @@ batch_tokens = []
 for i in range(len(tokenizer)):
     batch_tokens.append([i])
 
-samd_config = SamdConfig(n_predicts=args.n_predicts)
-
-sam = build_sam(samd_config, batch_tokens, tokenizer.eos_token_id)
+sam = build_sam(batch_tokens, tokenizer.eos_token_id)
 
 model_name = args.model_name.split("/")[-1]
 dump_sam(args.sam_path, sam)

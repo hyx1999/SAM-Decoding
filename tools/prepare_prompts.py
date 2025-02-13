@@ -2,7 +2,7 @@ import os
 import argparse
 from transformers import PreTrainedTokenizer, AutoTokenizer
 from datasets import Dataset, DatasetDict, load_dataset, concatenate_datasets
-from .data_utils import process_alpaca, process_gsm8k, process_vocab
+from .data_utils import process_alpaca, process_gsm8k
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_name', type=str, default='/data/models/vicuna-7b-v1.3')
@@ -21,7 +21,6 @@ math_data = load_dataset('parquet', data_files='sam_data/gsm8k/main/train-*.parq
 alpaca_data = process_alpaca(args, alpaca_data)
 code_data = process_alpaca(args, code_data)
 math_data = process_gsm8k(args, math_data)
-# vocab_data = process_vocab(args, tokenizer)
 
 sam_data: Dataset = concatenate_datasets([alpaca_data, code_data, math_data])
 sam_data.save_to_disk(f'sam_data/sam_prompts')
