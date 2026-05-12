@@ -44,7 +44,7 @@ Expeiment result on [Spec-Bench](https://github.com/hemingkx/Spec-Bench)
 <!-- **warning: Please note that these results are not final and may be revised** -->
 
 - Device: a single NVIDIA RTX A6000 GPU (48GB) with 20 CPU cores
-- Testing environment: Pytorch 2.3.0, Transformers 4.36.1, CUDA 12.1
+- Testing environment: Pytorch 2.3.0, Transformers 4.46.1, CUDA 12.1
 - Experimental Settings: Vicuna-7B-v1.3, greedy decoding, FP16 precision, batch size = 1
 
 | Models                                                        | Multi-turn Conversation | Translation | Summa-rization | Question Answering | Mathematical Reasoning | Retrieval-aug. Generation | #Mean Accepted Tokens |  Overall  |
